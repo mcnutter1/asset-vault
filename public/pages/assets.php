@@ -12,7 +12,11 @@ if (($_POST['action'] ?? '') === 'delete') {
 }
 
 // Fetch assets tree
-$assets = $pdo->query('SELECT a.id, a.name, a.parent_id, ac.name AS category FROM assets a LEFT JOIN asset_categories ac ON ac.id=a.category_id WHERE a.is_deleted=0 ORDER BY a.parent_id IS NOT NULL, a.parent_id, a.name')->fetchAll();
+$assets = $pdo->query('SELECT a.id, a.name, a.parent_id, ac.name AS category, l.name AS locname FROM assets a 
+  LEFT JOIN asset_categories ac ON ac.id=a.category_id 
+  LEFT JOIN locations l ON l.id=a.location_id
+  WHERE a.is_deleted=0 
+  ORDER BY a.parent_id IS NOT NULL, a.parent_id, a.name')->fetchAll();
 $byParent = [];
 foreach ($assets as $a) { $byParent[$a['parent_id'] ?? 0][] = $a; }
 
@@ -22,6 +26,7 @@ function renderTree($parentId, $byParent) {
   foreach ($byParent[$parentId] as $a) {
     echo '<li>';
     echo '<span class="name">'.Util::h($a['name']).'</span> <span class="small muted">'.Util::h($a['category'])."</span> ";
+    if (!empty($a['locname'])) echo '<span class="pill">'.Util::h($a['locname']).'</span> ';
     echo ' <a class="btn ghost" href="'.Util::baseUrl('index.php?page=asset_edit&id='.(int)$a['id']).'">Edit</a>';
     echo ' <form method="post" style="display:inline" onsubmit="return confirmAction(\'Delete asset?\')">';
     echo '<input type="hidden" name="csrf" value="'.Util::csrfToken().'">';
@@ -43,4 +48,3 @@ function renderTree($parentId, $byParent) {
   </div>
   <?php renderTree(0, $byParent); ?>
 </div>
-

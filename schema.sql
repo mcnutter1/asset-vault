@@ -34,11 +34,50 @@ CREATE TABLE IF NOT EXISTS assets (
   year SMALLINT NULL,
   purchase_date DATE NULL,
   notes TEXT NULL,
+  location_id INT NULL,
+  public_token VARCHAR(64) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   is_deleted TINYINT(1) NOT NULL DEFAULT 0,
   CONSTRAINT fk_assets_parent FOREIGN KEY (parent_id) REFERENCES assets(id) ON DELETE SET NULL,
   CONSTRAINT fk_assets_category FOREIGN KEY (category_id) REFERENCES asset_categories(id) ON DELETE SET NULL
+);
+
+-- Reusable Locations (e.g., rooms in a house, storage units, garages)
+CREATE TABLE IF NOT EXISTS locations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  parent_id INT NULL,
+  name VARCHAR(150) NOT NULL,
+  description VARCHAR(255) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_locations_parent FOREIGN KEY (parent_id) REFERENCES locations(id) ON DELETE SET NULL
+);
+
+-- Link assets to locations (after locations table exists)
+ALTER TABLE assets
+  ADD CONSTRAINT fk_assets_location FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL;
+
+-- Public token unique for shareable links
+ALTER TABLE assets
+  ADD UNIQUE KEY uniq_assets_public_token (public_token);
+
+-- Optional: asset addresses for physical property or storage addresses
+CREATE TABLE IF NOT EXISTS asset_addresses (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  asset_id INT NOT NULL,
+  address_type ENUM('physical','storage','mailing','other') NOT NULL DEFAULT 'physical',
+  line1 VARCHAR(200) NOT NULL,
+  line2 VARCHAR(200) NULL,
+  city VARCHAR(100) NOT NULL,
+  state VARCHAR(100) NULL,
+  postal_code VARCHAR(20) NULL,
+  country VARCHAR(100) NULL,
+  latitude DECIMAL(10,7) NULL,
+  longitude DECIMAL(10,7) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_asset_addr (asset_id, address_type),
+  CONSTRAINT fk_asset_addresses_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS asset_values (

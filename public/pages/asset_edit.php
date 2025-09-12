@@ -6,6 +6,7 @@ $isEdit = $id > 0;
 
 // Fetch categories and parents
 $cats = $pdo->query('SELECT id, name FROM asset_categories ORDER BY name')->fetchAll();
+$locations = $pdo->query('SELECT id, name FROM locations ORDER BY name')->fetchAll();
 $parents = $pdo->query('SELECT id, name FROM assets WHERE is_deleted=0 ORDER BY name')->fetchAll();
 
 // Save asset
@@ -24,12 +25,16 @@ if (($_POST['action'] ?? '') === 'save') {
   $notes = trim($_POST['notes'] ?? '');
 
   if ($isEdit) {
-    $stmt = $pdo->prepare('UPDATE assets SET name=?, category_id=?, parent_id=?, description=?, location=?, make=?, model=?, serial_number=?, year=?, purchase_date=?, notes=? WHERE id=?');
-    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $id]);
+    $location_id = $_POST['location_id'] ? (int)$_POST['location_id'] : null;
+    $stmt = $pdo->prepare('UPDATE assets SET name=?, category_id=?, parent_id=?, description=?, location=?, make=?, model=?, serial_number=?, year=?, purchase_date=?, notes=?, location_id=? WHERE id=?');
+    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $location_id, $id]);
     $pdo->prepare('INSERT INTO audit_log(entity_type, entity_id, action, details) VALUES ("asset", ?, "update", NULL)')->execute([$id]);
   } else {
-    $stmt = $pdo->prepare('INSERT INTO assets(name, category_id, parent_id, description, location, make, model, serial_number, year, purchase_date, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
-    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes]);
+    $location_id = $_POST['location_id'] ? (int)$_POST['location_id'] : null;
+    // generate public token
+    $token = bin2hex(random_bytes(12));
+    $stmt = $pdo->prepare('INSERT INTO assets(name, category_id, parent_id, description, location, make, model, serial_number, year, purchase_date, notes, location_id, public_token) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $location_id, $token]);
     $id = (int)$pdo->lastInsertId();
     $pdo->prepare('INSERT INTO audit_log(entity_type, entity_id, action, details) VALUES ("asset", ?, "create", NULL)')->execute([$id]);
     $isEdit = true;
@@ -67,17 +72,51 @@ if (($_POST['action'] ?? '') === 'save') {
     }
   }
 
+  // Handle saving address if visible
+  if (!empty($_POST['addr_line1']) || !empty($_POST['addr_city'])) {
+    // Determine addrType again (based on chosen category_id)
+    $catName = '';
+    if (!empty($category_id)) {
+      $stmt = $pdo->prepare('SELECT name FROM asset_categories WHERE id=?');
+      $stmt->execute([$category_id]);
+      $cn = $stmt->fetchColumn();
+      $catName = strtolower($cn ?: '');
+    }
+    $addrType = (in_array($catName, ['home','house','property'])) ? 'physical' : (in_array($catName, ['vehicle','car','boat'])) ? 'storage' : '';
+    if ($addrType) {
+      $line1 = trim($_POST['addr_line1'] ?? '');
+      $line2 = trim($_POST['addr_line2'] ?? '');
+      $city = trim($_POST['addr_city'] ?? '');
+      $state = trim($_POST['addr_state'] ?? '');
+      $postal = trim($_POST['addr_postal'] ?? '');
+      $country = trim($_POST['addr_country'] ?? '');
+      // Upsert via delete+insert for simplicity
+      $pdo->prepare('DELETE FROM asset_addresses WHERE asset_id=? AND address_type=?')->execute([$id, $addrType]);
+      if ($line1 || $city) {
+        $stmt = $pdo->prepare('INSERT INTO asset_addresses(asset_id, address_type, line1, line2, city, state, postal_code, country) VALUES (?,?,?,?,?,?,?,?)');
+        $stmt->execute([$id, $addrType, $line1, $line2, $city, $state, $postal, $country]);
+      }
+    }
+  }
+
   Util::redirect('index.php?page=asset_edit&id='.$id);
 }
 
 // Fetch existing asset
 $asset = [
-  'name'=>'','category_id'=>'','parent_id'=>'','description'=>'','location'=>'','make'=>'','model'=>'','serial_number'=>'','year'=>'','purchase_date'=>'','notes'=>''
+  'name'=>'','category_id'=>'','parent_id'=>'','description'=>'','location'=>'','make'=>'','model'=>'','serial_number'=>'','year'=>'','purchase_date'=>'','notes'=>'','location_id'=>'','public_token'=>''
 ];
 if ($isEdit) {
   $stmt = $pdo->prepare('SELECT * FROM assets WHERE id=?');
   $stmt->execute([$id]);
   $asset = $stmt->fetch() ?: $asset;
+}
+
+// ensure public_token exists for existing records
+if ($isEdit && empty($asset['public_token'])) {
+  $tok = bin2hex(random_bytes(12));
+  $pdo->prepare('UPDATE assets SET public_token=? WHERE id=?')->execute([$tok, $id]);
+  $asset['public_token'] = $tok;
 }
 // Values history
 $values = [];
@@ -139,7 +178,7 @@ if ($isEdit) {
   <form method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
     <input type="hidden" name="action" value="save">
-    <div class="row">
+  <div class="row">
       <div class="col-6">
         <label>Name</label>
         <input name="name" required value="<?= Util::h($asset['name']) ?>">
@@ -150,6 +189,15 @@ if ($isEdit) {
           <option value="">--</option>
           <?php foreach ($cats as $c): ?>
             <option value="<?= (int)$c['id'] ?>" <?= $asset['category_id']==$c['id']?'selected':'' ?>><?= Util::h($c['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="col-3">
+        <label>Location (Reusable)</label>
+        <select name="location_id">
+          <option value="">--</option>
+          <?php foreach ($locations as $loc): ?>
+            <option value="<?= (int)$loc['id'] ?>" <?= $asset['location_id']==$loc['id']?'selected':'' ?>><?= Util::h($loc['name']) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
@@ -166,13 +214,39 @@ if ($isEdit) {
         <label>Description</label>
         <textarea name="description" rows="3"><?= Util::h($asset['description']) ?></textarea>
       </div>
-      <div class="col-4"><label>Location</label><input name="location" value="<?= Util::h($asset['location']) ?>"></div>
+      <div class="col-4"><label>Location (Free Text)</label><input name="location" value="<?= Util::h($asset['location']) ?>"></div>
       <div class="col-4"><label>Make</label><input name="make" value="<?= Util::h($asset['make']) ?>"></div>
       <div class="col-4"><label>Model</label><input name="model" value="<?= Util::h($asset['model']) ?>"></div>
       <div class="col-4"><label>Serial #</label><input name="serial_number" value="<?= Util::h($asset['serial_number']) ?>"></div>
       <div class="col-4"><label>Year</label><input type="number" min="1900" max="2100" name="year" value="<?= Util::h($asset['year']) ?>"></div>
       <div class="col-4"><label>Purchase Date</label><input type="date" name="purchase_date" value="<?= Util::h($asset['purchase_date']) ?>"></div>
       <div class="col-12"><label>Notes</label><textarea name="notes" rows="2"><?= Util::h($asset['notes']) ?></textarea></div>
+
+      <?php
+        // Determine category name to conditionally show address
+        $catName = '';
+        if (!empty($asset['category_id'])) {
+          foreach ($cats as $c) if ($c['id'] == $asset['category_id']) { $catName = strtolower($c['name']); break; }
+        }
+        $addrType = (in_array($catName, ['home','house','property'])) ? 'physical' : (in_array($catName, ['vehicle','car','boat'])) ? 'storage' : '';
+        $addr = null;
+        if ($isEdit && $addrType) {
+          $stmt = $pdo->prepare('SELECT * FROM asset_addresses WHERE asset_id=? AND address_type=?');
+          $stmt->execute([$id, $addrType]);
+          $addr = $stmt->fetch();
+        }
+      ?>
+      <?php if ($addrType): ?>
+        <div class="col-12">
+          <h2><?= ucfirst($addrType) ?> Address</h2>
+        </div>
+        <div class="col-6"><label>Address Line 1</label><input name="addr_line1" value="<?= Util::h($addr['line1'] ?? '') ?>"></div>
+        <div class="col-6"><label>Address Line 2</label><input name="addr_line2" value="<?= Util::h($addr['line2'] ?? '') ?>"></div>
+        <div class="col-4"><label>City</label><input name="addr_city" value="<?= Util::h($addr['city'] ?? '') ?>"></div>
+        <div class="col-4"><label>State</label><input name="addr_state" value="<?= Util::h($addr['state'] ?? '') ?>"></div>
+        <div class="col-4"><label>Postal Code</label><input name="addr_postal" value="<?= Util::h($addr['postal_code'] ?? '') ?>"></div>
+        <div class="col-4"><label>Country</label><input name="addr_country" value="<?= Util::h($addr['country'] ?? '') ?>"></div>
+      <?php endif; ?>
 
       <div class="col-12">
         <h2>Valuations</h2>
@@ -250,6 +324,19 @@ if ($isEdit) {
           </table>
         <?php endif; ?>
       </div>
+      <?php if ($isEdit): ?>
+      <div class="col-12">
+        <h2>Public Link</h2>
+        <?php $publicUrl = Util::baseUrl('index.php?page=asset_view&code='.$asset['public_token']); ?>
+        <div class="small">Anyone with this link can view asset details.</div>
+        <div class="list">
+          <div class="item" style="gap:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:260px;word-break:break-all">URL: <a href="<?= $publicUrl ?>"><?= $publicUrl ?></a></div>
+            <img alt="QR" style="height:120px;border:1px solid #e5e7eb;border-radius:8px" src="https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl=<?= urlencode($publicUrl) ?>&choe=UTF-8">
+          </div>
+        </div>
+      </div>
+      <?php endif; ?>
       <?php if ($isEdit): ?>
       <div class="col-12">
         <h2>Inherited Policies</h2>
