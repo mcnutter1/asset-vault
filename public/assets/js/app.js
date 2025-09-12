@@ -51,5 +51,18 @@ window.addEventListener('DOMContentLoaded', ()=>{
     const json = c.getAttribute('data-series');
     if (json) drawLineChart(c, JSON.parse(json));
   });
+  qsa('[data-modal-open]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-modal-open');
+      const el = document.getElementById(id);
+      if (el) el.classList.add('show');
+    });
+  });
+  qsa('[data-modal-close]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-modal-close');
+      const el = id ? document.getElementById(id) : btn.closest('.modal-backdrop');
+      if (el) el.classList.remove('show');
+    });
+  });
 });
-

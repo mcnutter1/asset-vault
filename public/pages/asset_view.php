@@ -18,6 +18,25 @@ $stmt = $pdo->prepare("SELECT id, filename FROM files WHERE entity_type='asset' 
 $stmt->execute([(int)$asset['id']]);
 $photos = $stmt->fetchAll();
 
+// Value summaries
+$curr = $pdo->prepare("SELECT amount FROM asset_values WHERE asset_id=? AND value_type='current' ORDER BY valuation_date DESC LIMIT 1");
+$curr->execute([(int)$asset['id']]);
+$currentValue = $curr->fetchColumn();
+if ($currentValue !== false) $currentValue = (float)$currentValue; else $currentValue = null;
+
+$repl = $pdo->prepare("SELECT amount FROM asset_values WHERE asset_id=? AND value_type='replace' ORDER BY valuation_date DESC LIMIT 1");
+$repl->execute([(int)$asset['id']]);
+$replaceValue = $repl->fetchColumn();
+if ($replaceValue !== false) $replaceValue = (float)$replaceValue; else $replaceValue = null;
+
+// Parent asset (if any)
+$parent = null;
+if (!empty($asset['parent_id'])) {
+  $ps = $pdo->prepare('SELECT id, name FROM assets WHERE id=?');
+  $ps->execute([(int)$asset['parent_id']]);
+  $parent = $ps->fetch();
+}
+
 // Build contents (children) table with values
 $allAssets = $pdo->query('SELECT a.id, a.name, a.parent_id, ac.name AS category, al.name AS locname FROM assets a 
   LEFT JOIN asset_categories ac ON ac.id=a.category_id 
@@ -56,9 +75,18 @@ pv_flatten((int)$asset['id'], $byParent, 0, $flat);
 
 ?>
 <div class="card">
-  <h1><?= Util::h($asset['name']) ?></h1>
-  <div class="small muted">Category: <?= Util::h($asset['category_name']) ?></div>
-  <?php if ($asset['location_name']): ?><div class="small muted">Location: <?= Util::h($asset['location_name']) ?></div><?php endif; ?>
+  <div class="header-card">
+    <div class="header-left">
+      <div class="header-title"><?= Util::h($asset['name']) ?></div>
+      <div class="header-meta">
+        <span class="pill">Category: <?= Util::h($asset['category_name']) ?></span>
+        <?php if ($asset['location_name']): ?><span class="pill">Location: <?= Util::h($asset['location_name']) ?></span><?php endif; ?>
+        <?php if ($parent): ?><span class="pill">Parent: <?= Util::h($parent['name']) ?></span><?php endif; ?>
+        <span class="value-pill">Current: <?= $currentValue!==null? ('$'.number_format($currentValue,2)) : '—' ?></span>
+        <span class="value-pill">Replace: <?= $replaceValue!==null? ('$'.number_format($replaceValue,2)) : '—' ?></span>
+      </div>
+    </div>
+  </div>
   <?php if ($asset['description']): ?><p><?= nl2br(Util::h($asset['description'])) ?></p><?php endif; ?>
 
   <div class="row">

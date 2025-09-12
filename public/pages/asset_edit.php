@@ -138,6 +138,14 @@ if ($isEdit) {
   $stmt->execute([$id]);
   $values = $stmt->fetchAll();
 }
+// Latest current value for header
+$currentValue = null;
+if ($isEdit) {
+  $stmt = $pdo->prepare("SELECT amount FROM asset_values WHERE asset_id=? AND value_type='current' ORDER BY valuation_date DESC LIMIT 1");
+  $stmt->execute([$id]);
+  $cv = $stmt->fetchColumn();
+  if ($cv !== false) $currentValue = (float)$cv;
+}
 // Prepare current value series
 $seriesCurrent = [];
 if ($values) {
@@ -183,8 +191,26 @@ if ($isEdit) {
 
 ?>
 
+<?php if ($isEdit): ?>
+<div class="card" style="margin-bottom:16px">
+  <div class="header-card">
+    <div class="header-left">
+      <div class="header-title"><?= Util::h($asset['name']) ?></div>
+      <div class="header-meta">
+        <?php $publicUrl = Util::baseUrl('index.php?page=asset_view&code='.$asset['public_token']); ?>
+        <a class="btn ghost" href="<?= $publicUrl ?>" target="_blank">Open Public View</a>
+        <span class="value-pill">Current: <?= $currentValue!==null? ('$'.number_format($currentValue,2)) : '—' ?></span>
+      </div>
+    </div>
+    <div class="header-right">
+      <img alt="QR" style="height:110px;border:1px solid #e5e7eb;border-radius:8px" src="https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl=<?= urlencode($publicUrl) ?>&choe=UTF-8">
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="row">
-  <div class="col-6">
+  <div class="col-8">
 <div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
     <h1><?= $isEdit ? 'Edit Asset' : 'Add Asset' ?></h1>
@@ -400,9 +426,8 @@ if ($isEdit) {
     }
   })();
 </script>
-</div>
   </div>
-  <div class="col-6">
+  <div class="col-4">
     <div class="card">
       <h1>Configuration</h1>
       <?php if ($isEdit): ?>
@@ -432,47 +457,24 @@ if ($isEdit) {
           $ownedLocs->execute([$id]);
           $ownedLocs = $ownedLocs->fetchAll();
         ?>
-        <form method="post" class="row" style="margin-bottom:8px">
-          <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-          <input type="hidden" name="action" value="add_loc">
-          <div class="col-6"><label>Name</label><input name="loc_name" required></div>
-          <div class="col-6"><label>Description</label><input name="loc_desc"></div>
-          <div class="col-12 actions"><button class="btn" type="submit">Add</button></div>
-        </form>
         <?php if (!$ownedLocs): ?>
-          <div class="small muted">No locations defined for this asset.</div>
+          <div class="small muted">No locations defined.</div>
         <?php else: ?>
-          <table>
-            <thead><tr><th>Name</th><th>Description</th><th></th></tr></thead>
-            <tbody>
-              <?php foreach ($ownedLocs as $ol): ?>
-                <tr>
-                  <td><?= Util::h($ol['name']) ?></td>
-                  <td><?= Util::h($ol['description']) ?></td>
-                  <td>
-                    <form method="post" onsubmit="return confirmAction('Delete location? Child assets using it will be unassigned.')">
-                      <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-                      <input type="hidden" name="action" value="del_loc">
-                      <input type="hidden" name="loc_id" value="<?= (int)$ol['id'] ?>">
-                      <button class="btn ghost danger">Delete</button>
-                    </form>
-                  </td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        <?php endif; ?>
-      </div>
-      <div style="margin-top:16px">
-        <h2>Public Link</h2>
-        <?php $publicUrl = Util::baseUrl('index.php?page=asset_view&code='.$asset['public_token']); ?>
-        <div class="small">Anyone with this link can view asset details.</div>
-        <div class="list">
-          <div class="item" style="gap:8px;flex-wrap:wrap">
-            <div style="flex:1;min-width:260px;word-break:break-all">URL: <a href="<?= $publicUrl ?>"><?= $publicUrl ?></a></div>
-            <img alt="QR" style="height:120px;border:1px solid #e5e7eb;border-radius:8px" src="https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl=<?= urlencode($publicUrl) ?>&choe=UTF-8">
+          <div class="label-list" style="margin-bottom:8px">
+            <?php foreach ($ownedLocs as $ol): ?>
+              <span class="label">
+                <?= Util::h($ol['name']) ?>
+                <form method="post" style="display:inline" onsubmit="return confirmAction('Delete location?')">
+                  <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                  <input type="hidden" name="action" value="del_loc">
+                  <input type="hidden" name="loc_id" value="<?= (int)$ol['id'] ?>">
+                  <button class="x" title="Remove">×</button>
+                </form>
+              </span>
+            <?php endforeach; ?>
           </div>
-        </div>
+        <?php endif; ?>
+        <button class="btn" data-modal-open="locModal">Add Location</button>
       </div>
       <?php else: ?>
         <div class="small muted">Save the asset first to configure locations and public link.</div>
@@ -480,3 +482,26 @@ if ($isEdit) {
     </div>
   </div>
 </div>
+
+<?php if ($isEdit): ?>
+<!-- Add Location Modal -->
+<div class="modal-backdrop" id="locModal">
+  <div class="modal">
+    <div class="head"><strong>Add Location</strong><button class="x" data-modal-close="locModal">✕</button></div>
+    <div class="body">
+      <form method="post" id="locForm">
+        <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+        <input type="hidden" name="action" value="add_loc">
+        <div class="row">
+          <div class="col-12"><label>Name</label><input name="loc_name" required></div>
+          <div class="col-12"><label>Description</label><input name="loc_desc"></div>
+        </div>
+      </form>
+    </div>
+    <div class="foot">
+      <button class="btn ghost" data-modal-close="locModal">Cancel</button>
+      <button class="btn" onclick="document.getElementById('locForm').submit()">Add</button>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
