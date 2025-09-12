@@ -18,6 +18,42 @@ $stmt = $pdo->prepare("SELECT id, filename FROM files WHERE entity_type='asset' 
 $stmt->execute([(int)$asset['id']]);
 $photos = $stmt->fetchAll();
 
+// Build contents (children) table with values
+$allAssets = $pdo->query('SELECT a.id, a.name, a.parent_id, ac.name AS category, l.name AS locname FROM assets a 
+  LEFT JOIN asset_categories ac ON ac.id=a.category_id 
+  LEFT JOIN locations l ON l.id=a.location_id
+  WHERE a.is_deleted=0 ORDER BY a.parent_id, a.name')->fetchAll();
+$byParent = [];
+foreach ($allAssets as $a) { $byParent[$a['parent_id'] ?? 0][] = $a; }
+
+$vals = $pdo->query("SELECT asset_id, amount, valuation_date FROM asset_values WHERE value_type='current' ORDER BY valuation_date ASC")->fetchAll();
+$selfValue = [];
+foreach ($vals as $v) { $selfValue[$v['asset_id']] = (float)$v['amount']; }
+
+$memoTotals = [];
+function pv_totalsFor($id, $byParent, $selfValue, &$memoTotals){
+  if (isset($memoTotals[$id])) return $memoTotals[$id];
+  $self = $selfValue[$id] ?? 0.0;
+  $children = $byParent[$id] ?? [];
+  $contents = 0.0;
+  foreach ($children as $c){
+    $t = pv_totalsFor($c['id'], $byParent, $selfValue, $memoTotals);
+    $contents += $t['total'];
+  }
+  return $memoTotals[$id] = ['self'=>$self, 'contents'=>$contents, 'total'=>$self+$contents];
+}
+
+$flat = [];
+function pv_flatten($parentId, $byParent, $depth, &$flat){
+  if (empty($byParent[$parentId])) return;
+  foreach ($byParent[$parentId] as $a){
+    $a['depth'] = $depth;
+    $flat[] = $a;
+    pv_flatten($a['id'], $byParent, $depth+1, $flat);
+  }
+}
+pv_flatten((int)$asset['id'], $byParent, 0, $flat);
+
 ?>
 <div class="card">
   <h1><?= Util::h($asset['name']) ?></h1>
@@ -41,3 +77,23 @@ $photos = $stmt->fetchAll();
   <?php endif; ?>
 </div>
 
+<?php if ($flat): ?>
+<div class="card" style="margin-top:16px">
+  <h2>Contents</h2>
+  <table>
+    <thead><tr><th>Asset</th><th>Category</th><th>Location</th><th>Value</th><th>Contents</th><th>Total</th></tr></thead>
+    <tbody>
+      <?php foreach ($flat as $row): $t = pv_totalsFor($row['id'], $byParent, $selfValue, $memoTotals); ?>
+        <tr>
+          <td><div style="padding-left: <?= (int)$row['depth']*16 ?>px"><?= Util::h($row['name']) ?></div></td>
+          <td><?= Util::h($row['category']) ?></td>
+          <td><?= $row['locname'] ? Util::h($row['locname']) : '-' ?></td>
+          <td>$<?= number_format($t['self'], 2) ?></td>
+          <td>$<?= number_format($t['contents'], 2) ?></td>
+          <td><strong>$<?= number_format($t['total'], 2) ?></strong></td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+</div>
+<?php endif; ?>

@@ -30,36 +30,37 @@ $assets = $pdo->query('SELECT a.id, a.name, a.parent_id, a.public_token, ac.name
 $byParent = [];
 foreach ($assets as $a) { $byParent[$a['parent_id'] ?? 0][] = $a; }
 
-function renderTree($parentId, $byParent) {
-  if (empty($byParent[$parentId])) return;
-  echo '<ul class="tree">';
-  foreach ($byParent[$parentId] as $a) {
-    echo '<li>';
-    echo '<span class="name">'.Util::h($a['name']).'</span> <span class="small muted">'.Util::h($a['category'])."</span> ";
-    if (!empty($a['locname'])) echo '<span class="pill">'.Util::h($a['locname']).'</span> ';
-    echo ' <a class="btn ghost" href="'.Util::baseUrl('index.php?page=asset_edit&id='.(int)$a['id']).'">Edit</a>';
-    if (!empty($a['public_token'])) {
-      $viewUrl = Util::baseUrl('index.php?page=asset_view&code='.$a['public_token']);
-      echo ' <a class="btn ghost" href="'.$viewUrl.'" target="_blank">View</a>';
-    } else {
-      echo ' <form method="post" style="display:inline" onsubmit="return confirmAction(\'Create public link for this asset?\')">';
-      echo '<input type="hidden" name="csrf" value="'.Util::csrfToken().'">';
-      echo '<input type="hidden" name="action" value="gen_token">';
-      echo '<input type="hidden" name="id" value="'.(int)$a['id'].'">';
-      echo '<button class="btn ghost" type="submit">Create Link</button>';
-      echo '</form>';
-    }
-    echo ' <form method="post" style="display:inline" onsubmit="return confirmAction(\'Delete asset?\')">';
-    echo '<input type="hidden" name="csrf" value="'.Util::csrfToken().'">';
-    echo '<input type="hidden" name="action" value="delete">';
-    echo '<input type="hidden" name="id" value="'.(int)$a['id'].'">';
-    echo '<button class="btn ghost danger" type="submit">Delete</button>';
-    echo '</form>';
-    renderTree($a['id'], $byParent);
-    echo '</li>';
+// Latest current values per asset
+$vals = $pdo->query("SELECT asset_id, amount, valuation_date FROM asset_values WHERE value_type='current' ORDER BY valuation_date ASC")->fetchAll();
+$selfValue = [];
+foreach ($vals as $v) { $selfValue[$v['asset_id']] = (float)$v['amount']; }
+
+// Compute totals recursively with memoization
+$memoTotals = [];
+function totalsFor($id, $byParent, $selfValue, &$memoTotals){
+  if (isset($memoTotals[$id])) return $memoTotals[$id];
+  $self = $selfValue[$id] ?? 0.0;
+  $children = $byParent[$id] ?? [];
+  $contents = 0.0;
+  foreach ($children as $c){
+    $t = totalsFor($c['id'], $byParent, $selfValue, $memoTotals);
+    $contents += $t['total'];
   }
-  echo '</ul>';
+  $memoTotals[$id] = ['self'=>$self, 'contents'=>$contents, 'total'=>$self+$contents];
+  return $memoTotals[$id];
 }
+
+// Flatten tree to rows with depth for indentation
+$flat = [];
+function flattenRows($parentId, $byParent, $depth, &$flat){
+  if (empty($byParent[$parentId])) return;
+  foreach ($byParent[$parentId] as $a){
+    $a['depth'] = $depth;
+    $flat[] = $a;
+    flattenRows($a['id'], $byParent, $depth+1, $flat);
+  }
+}
+flattenRows(0, $byParent, 0, $flat);
 ?>
 
 <div class="card">
@@ -67,5 +68,52 @@ function renderTree($parentId, $byParent) {
     <h1>Assets</h1>
     <a class="btn" href="<?= Util::baseUrl('index.php?page=asset_edit') ?>">Add Asset</a>
   </div>
-  <?php renderTree(0, $byParent); ?>
+  <table>
+    <thead>
+      <tr>
+        <th>Asset</th>
+        <th>Category</th>
+        <th>Location</th>
+        <th>Value</th>
+        <th>Contents</th>
+        <th>Total</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($flat as $row): $t = totalsFor($row['id'], $byParent, $selfValue, $memoTotals); ?>
+        <tr>
+          <td>
+            <div style="padding-left: <?= (int)$row['depth']*16 ?>px">
+              <?= Util::h($row['name']) ?>
+            </div>
+          </td>
+          <td><?= Util::h($row['category']) ?></td>
+          <td><?= $row['locname'] ? Util::h($row['locname']) : '-' ?></td>
+          <td>$<?= number_format($t['self'], 2) ?></td>
+          <td>$<?= number_format($t['contents'], 2) ?></td>
+          <td><strong>$<?= number_format($t['total'], 2) ?></strong></td>
+          <td class="actions">
+            <a class="btn ghost" href="<?= Util::baseUrl('index.php?page=asset_edit&id='.(int)$row['id']) ?>">Edit</a>
+            <?php if (!empty($row['public_token'])): $viewUrl = Util::baseUrl('index.php?page=asset_view&code='.$row['public_token']); ?>
+              <a class="btn ghost" href="<?= $viewUrl ?>" target="_blank">View</a>
+            <?php else: ?>
+              <form method="post" style="display:inline" onsubmit="return confirmAction('Create public link for this asset?')">
+                <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                <input type="hidden" name="action" value="gen_token">
+                <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
+                <button class="btn ghost" type="submit">Create Link</button>
+              </form>
+            <?php endif; ?>
+            <form method="post" style="display:inline" onsubmit="return confirmAction('Delete asset?')">
+              <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
+              <button class="btn ghost danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
 </div>

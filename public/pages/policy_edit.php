@@ -298,7 +298,7 @@ if ($isEdit) {
           </select>
         </div>
         <div>
-          <label>Applies to Children</label>
+          <label>Applies to Contents</label>
           <select name="applies_to_children">
             <option value="1" selected>Yes</option>
             <option value="0">No</option>
