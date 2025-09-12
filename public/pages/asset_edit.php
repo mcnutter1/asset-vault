@@ -4,19 +4,8 @@ $cfg = Util::config();
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $isEdit = $id > 0;
 
-// Fetch categories and parents
+// Fetch categories and potential parents
 $cats = $pdo->query('SELECT id, name FROM asset_categories ORDER BY name')->fetchAll();
-// Parent-defined locations available for this asset
-$parentLocations = [];
-// Determine parent id for this form state (existing or chosen parent)
-$formParentId = null;
-if ($isEdit) { $formParentId = $asset['parent_id'] ?? null; }
-if ($formParentId === null && isset($_POST['parent_id']) && $_POST['parent_id']!=='') { $formParentId = (int)$_POST['parent_id']; }
-if ($formParentId) {
-  $stmt = $pdo->prepare('SELECT id, name FROM asset_locations WHERE asset_id=? ORDER BY name');
-  $stmt->execute([$formParentId]);
-  $parentLocations = $stmt->fetchAll();
-}
 $parents = $pdo->query('SELECT id, name FROM assets WHERE is_deleted=0 ORDER BY name')->fetchAll();
 
 // Save asset
@@ -121,6 +110,20 @@ if ($isEdit) {
   $stmt->execute([$id]);
   $asset = $stmt->fetch() ?: $asset;
 }
+// After we know $asset, load parent-defined locations (optional)
+$parentLocations = [];
+$formParentId = null;
+if ($isEdit) { $formParentId = $asset['parent_id'] ?? null; }
+if ($formParentId === null && isset($_POST['parent_id']) && $_POST['parent_id']!=='') { $formParentId = (int)$_POST['parent_id']; }
+if ($formParentId) {
+  $stmt = $pdo->prepare('SELECT id, name FROM asset_locations WHERE asset_id=? ORDER BY name');
+  $stmt->execute([$formParentId]);
+  $parentLocations = $stmt->fetchAll();
+}
+// Build map of all parent asset -> locations for client-side switch (optional)
+$allParentLocs = $pdo->query('SELECT asset_id, id, name FROM asset_locations ORDER BY name')->fetchAll();
+$locMap = [];
+foreach ($allParentLocs as $pl){ $aid = (int)$pl['asset_id']; if (!isset($locMap[$aid])) $locMap[$aid] = []; $locMap[$aid][] = ['id'=>(int)$pl['id'], 'name'=>$pl['name']]; }
 
 // ensure public_token exists for existing records
 if ($isEdit && empty($asset['public_token'])) {
@@ -180,6 +183,8 @@ if ($isEdit) {
 
 ?>
 
+<div class="row">
+  <div class="col-6">
 <div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
     <h1><?= $isEdit ? 'Edit Asset' : 'Add Asset' ?></h1>
@@ -203,9 +208,18 @@ if ($isEdit) {
         </select>
       </div>
       <div class="col-3">
+        <label>Parent Asset</label>
+        <select name="parent_id" id="parent_id">
+          <option value="">--</option>
+          <?php foreach ($parents as $p): if ($isEdit && $p['id']==$id) continue; ?>
+            <option value="<?= (int)$p['id'] ?>" <?= $asset['parent_id']==$p['id']?'selected':'' ?>><?= Util::h($p['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="col-3">
         <label>Location (from Parent)</label>
         <?php if ($formParentId && $parentLocations): ?>
-          <select name="asset_location_id">
+          <select name="asset_location_id" id="asset_location_id">
             <option value="">--</option>
             <?php foreach ($parentLocations as $loc): ?>
               <option value="<?= (int)$loc['id'] ?>" <?= $asset['asset_location_id']==$loc['id']?'selected':'' ?>><?= Util::h($loc['name']) ?></option>
@@ -213,19 +227,13 @@ if ($isEdit) {
           </select>
           <div class="small muted">Locations defined on the parent asset.</div>
         <?php elseif (!$formParentId): ?>
-          <div class="small muted">Select a Parent Asset to choose a location.</div>
+          <div class="small muted">Select a Parent Asset to choose a location (optional).</div>
         <?php else: ?>
-          <div class="small muted">No locations defined on the parent asset.</div>
+          <select name="asset_location_id" id="asset_location_id">
+            <option value="">--</option>
+          </select>
+          <div class="small muted">No locations defined on the parent asset (optional).</div>
         <?php endif; ?>
-      </div>
-      <div class="col-3">
-        <label>Parent Asset</label>
-        <select name="parent_id">
-          <option value="">--</option>
-          <?php foreach ($parents as $p): if ($isEdit && $p['id']==$id) continue; ?>
-            <option value="<?= (int)$p['id'] ?>" <?= $asset['parent_id']==$p['id']?'selected':'' ?>><?= Util::h($p['name']) ?></option>
-          <?php endforeach; ?>
-        </select>
       </div>
       <div class="col-12">
         <label>Description</label>
@@ -341,8 +349,64 @@ if ($isEdit) {
           </table>
         <?php endif; ?>
       </div>
+      
+      
       <?php if ($isEdit): ?>
       <div class="col-12">
+        <h2>Inherited Policies</h2>
+        <?php if (!$inheritedPolicies): ?>
+          <div class="small muted">No inherited policies from parents.</div>
+        <?php else: ?>
+          <table>
+            <thead><tr><th>Policy #</th><th>Insurer</th><th>Type</th><th>Start</th><th>End</th><th>Premium</th></tr></thead>
+            <tbody>
+              <?php foreach ($inheritedPolicies as $p): ?>
+                <tr>
+                  <td><a href="<?= Util::baseUrl('index.php?page=policy_edit&id='.(int)$p['id']) ?>"><?= Util::h($p['policy_number']) ?></a></td>
+                  <td><?= Util::h($p['insurer']) ?></td>
+                  <td><?= Util::h($p['policy_type']) ?></td>
+                  <td><?= Util::h($p['start_date']) ?></td>
+                  <td><?= Util::h($p['end_date']) ?></td>
+                  <td>$<?= number_format($p['premium'],2) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
+      <?php endif; ?>
+      <div class="col-12 actions" style="margin-top:8px">
+        <button class="btn" type="submit">Save</button>
+        <a class="btn ghost" href="<?= Util::baseUrl('index.php?page=assets') ?>">Cancel</a>
+      </div>
+    </div>
+  </form>
+<script>
+  (function(){
+    var map = <?= json_encode($locMap) ?>;
+    var parentSel = document.getElementById('parent_id');
+    var locSel = document.getElementById('asset_location_id');
+    if (parentSel && locSel) {
+      parentSel.addEventListener('change', function(){
+        var pid = this.value ? parseInt(this.value, 10) : 0;
+        // reset options
+        while (locSel.firstChild) locSel.removeChild(locSel.firstChild);
+        var opt = document.createElement('option'); opt.value=''; opt.textContent='--'; locSel.appendChild(opt);
+        if (pid && map[pid]) {
+          map[pid].forEach(function(l){ var o = document.createElement('option'); o.value = l.id; o.textContent = l.name; locSel.appendChild(o); });
+        }
+      });
+    }
+  })();
+</script>
+</div>
+  </div>
+  <div class="col-6">
+    <div class="card">
+      <h1>Configuration</h1>
+      <?php if ($isEdit): ?>
+      <div style="margin-top:8px">
         <h2>Locations for Contents</h2>
         <?php
           // Manage locations owned by this asset
@@ -371,9 +435,9 @@ if ($isEdit) {
         <form method="post" class="row" style="margin-bottom:8px">
           <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
           <input type="hidden" name="action" value="add_loc">
-          <div class="col-4"><label>Name</label><input name="loc_name" required></div>
+          <div class="col-6"><label>Name</label><input name="loc_name" required></div>
           <div class="col-6"><label>Description</label><input name="loc_desc"></div>
-          <div class="col-2" style="display:flex;align-items:flex-end"><button class="btn" type="submit">Add</button></div>
+          <div class="col-12 actions"><button class="btn" type="submit">Add</button></div>
         </form>
         <?php if (!$ownedLocs): ?>
           <div class="small muted">No locations defined for this asset.</div>
@@ -399,9 +463,7 @@ if ($isEdit) {
           </table>
         <?php endif; ?>
       </div>
-      <?php endif; ?>
-      <?php if ($isEdit): ?>
-      <div class="col-12">
+      <div style="margin-top:16px">
         <h2>Public Link</h2>
         <?php $publicUrl = Util::baseUrl('index.php?page=asset_view&code='.$asset['public_token']); ?>
         <div class="small">Anyone with this link can view asset details.</div>
@@ -412,37 +474,9 @@ if ($isEdit) {
           </div>
         </div>
       </div>
+      <?php else: ?>
+        <div class="small muted">Save the asset first to configure locations and public link.</div>
       <?php endif; ?>
-      <?php if ($isEdit): ?>
-      <div class="col-12">
-        <h2>Inherited Policies</h2>
-        <?php if (!$inheritedPolicies): ?>
-          <div class="small muted">No inherited policies from parents.</div>
-        <?php else: ?>
-          <table>
-            <thead><tr><th>Policy #</th><th>Insurer</th><th>Type</th><th>Start</th><th>End</th><th>Premium</th></tr></thead>
-            <tbody>
-              <?php foreach ($inheritedPolicies as $p): ?>
-                <tr>
-                  <td><a href="<?= Util::baseUrl('index.php?page=policy_edit&id='.(int)$p['id']) ?>"><?= Util::h($p['policy_number']) ?></a></td>
-                  <td><?= Util::h($p['insurer']) ?></td>
-                  <td><?= Util::h($p['policy_type']) ?></td>
-                  <td><?= Util::h($p['start_date']) ?></td>
-                  <td><?= Util::h($p['end_date']) ?></td>
-                  <td>$<?= number_format($p['premium'],2) ?></td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        <?php endif; ?>
-      </div>
-      <?php endif; ?>
-      <?php endif; ?>
-
-      <div class="col-12 actions" style="margin-top:8px">
-        <button class="btn" type="submit">Save</button>
-        <a class="btn ghost" href="<?= Util::baseUrl('index.php?page=assets') ?>">Cancel</a>
-      </div>
     </div>
-  </form>
+  </div>
 </div>
