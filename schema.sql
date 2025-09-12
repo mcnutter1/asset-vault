@@ -54,13 +54,19 @@ CREATE TABLE IF NOT EXISTS asset_values (
   CONSTRAINT fk_asset_values_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS asset_photos (
+-- Files (images/documents) stored in DB
+-- Generic association via entity_type + entity_id
+CREATE TABLE IF NOT EXISTS files (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  asset_id INT NOT NULL,
-  filepath VARCHAR(255) NOT NULL,
+  entity_type ENUM('asset','policy') NOT NULL,
+  entity_id INT NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  size INT NOT NULL,
+  content LONGBLOB NOT NULL,
   caption VARCHAR(255) NULL,
   uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_asset_photos_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+  INDEX idx_files_entity (entity_type, entity_id)
 );
 
 -- People (for policy coverage of people)
@@ -169,4 +175,3 @@ INSERT IGNORE INTO coverage_definitions (code, name, description, applicable_typ
 ('flood_contents', 'Contents (Flood)', 'Contents coverage for flood', 'flood'),
 ('scheduled_property', 'Scheduled Property', 'Scheduled personal property (e.g., jewelry)', 'jewelry,electronics,home'),
 ('umbrella_liability', 'Umbrella Liability', 'Excess liability coverage', 'umbrella');
-

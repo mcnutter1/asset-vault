@@ -47,20 +47,22 @@ if (($_POST['action'] ?? '') === 'save') {
     }
   }
 
-  // Handle photo uploads
+  // Handle photo uploads (store in DB)
   if (!empty($_FILES['photos']['name'][0])) {
-    Util::ensureUploadsDir();
-    $dir = rtrim($cfg['app']['uploads_dir'], '/');
     for ($i=0; $i<count($_FILES['photos']['name']); $i++) {
       if ($_FILES['photos']['error'][$i] === UPLOAD_ERR_OK) {
         $tmp = $_FILES['photos']['tmp_name'][$i];
-        $nameSafe = preg_replace('/[^a-zA-Z0-9._-]/','_', $_FILES['photos']['name'][$i]);
-        $destRel = date('Ymd_His').'_'.bin2hex(random_bytes(4)).'_'.$nameSafe;
-        $dest = $dir.'/'.$destRel;
-        if (@move_uploaded_file($tmp, $dest)) {
-          $stmt = $pdo->prepare('INSERT INTO asset_photos(asset_id, filepath) VALUES (?, ?)');
-          $stmt->execute([$id, $destRel]);
-        }
+        $orig = $_FILES['photos']['name'][$i];
+        $mime = $_FILES['photos']['type'][$i] ?: 'application/octet-stream';
+        $size = (int)$_FILES['photos']['size'][$i];
+        $content = file_get_contents($tmp);
+        $stmt = $pdo->prepare("INSERT INTO files(entity_type, entity_id, filename, mime_type, size, content) VALUES ('asset', ?, ?, ?, ?, ?)");
+        $stmt->bindValue(1, $id, PDO::PARAM_INT);
+        $stmt->bindValue(2, $orig, PDO::PARAM_STR);
+        $stmt->bindValue(3, $mime, PDO::PARAM_STR);
+        $stmt->bindValue(4, $size, PDO::PARAM_INT);
+        $stmt->bindParam(5, $content, PDO::PARAM_LOB);
+        $stmt->execute();
       }
     }
   }
@@ -93,10 +95,10 @@ if ($values) {
     }
   }
 }
-// Photos
+// Files (images) for this asset from DB
 $photos = [];
 if ($isEdit) {
-  $stmt = $pdo->prepare('SELECT * FROM asset_photos WHERE asset_id=? ORDER BY uploaded_at DESC');
+  $stmt = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='asset' AND entity_id=? AND mime_type LIKE 'image/%' ORDER BY uploaded_at DESC");
   $stmt->execute([$id]);
   $photos = $stmt->fetchAll();
 }
@@ -219,7 +221,7 @@ if ($isEdit) {
         <?php if ($photos): ?>
           <div class="gallery" style="margin-top:8px">
             <?php foreach ($photos as $ph): ?>
-              <img src="<?= Util::baseUrl('uploads/'.$ph['filepath']) ?>" alt="">
+              <img src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
             <?php endforeach; ?>
           </div>
         <?php endif; ?>

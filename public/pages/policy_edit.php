@@ -157,6 +157,44 @@ if ($groupId) {
   $versions = $stmt->fetchAll();
 }
 
+// Upload/delete policy documents
+if ($isEdit && (($_POST['action'] ?? '') === 'upload_file')) {
+  Util::checkCsrf();
+  if (!empty($_FILES['docs']['name'][0])) {
+    for ($i=0; $i<count($_FILES['docs']['name']); $i++) {
+      if ($_FILES['docs']['error'][$i] === UPLOAD_ERR_OK) {
+        $tmp = $_FILES['docs']['tmp_name'][$i];
+        $orig = $_FILES['docs']['name'][$i];
+        $mime = $_FILES['docs']['type'][$i] ?: 'application/octet-stream';
+        $size = (int)$_FILES['docs']['size'][$i];
+        $content = file_get_contents($tmp);
+        $stmt = $pdo->prepare("INSERT INTO files(entity_type, entity_id, filename, mime_type, size, content) VALUES ('policy', ?, ?, ?, ?, ?)");
+        $stmt->bindValue(1, $id, PDO::PARAM_INT);
+        $stmt->bindValue(2, $orig, PDO::PARAM_STR);
+        $stmt->bindValue(3, $mime, PDO::PARAM_STR);
+        $stmt->bindValue(4, $size, PDO::PARAM_INT);
+        $stmt->bindParam(5, $content, PDO::PARAM_LOB);
+        $stmt->execute();
+      }
+    }
+  }
+  Util::redirect('index.php?page=policy_edit&id='.$id);
+}
+if ($isEdit && (($_POST['action'] ?? '') === 'delete_file')) {
+  Util::checkCsrf();
+  $fid = (int)($_POST['file_id'] ?? 0);
+  $pdo->prepare("DELETE FROM files WHERE id=? AND entity_type='policy' AND entity_id=?")->execute([$fid, $id]);
+  Util::redirect('index.php?page=policy_edit&id='.$id);
+}
+
+// Load policy files
+$policyFiles = [];
+if ($isEdit) {
+  $stmt = $pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at FROM files WHERE entity_type='policy' AND entity_id=? ORDER BY uploaded_at DESC");
+  $stmt->execute([$id]);
+  $policyFiles = $stmt->fetchAll();
+}
+
 ?>
 
 <div class="card">
@@ -309,6 +347,41 @@ if ($groupId) {
       </table>
     </div>
   </div>
+  <div class="col-12">
+    <div class="card">
+      <h2>Documents</h2>
+      <form method="post" enctype="multipart/form-data" class="actions" style="margin-bottom:8px">
+        <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+        <input type="hidden" name="action" value="upload_file">
+        <input type="file" name="docs[]" multiple>
+        <button class="btn" type="submit">Upload</button>
+      </form>
+      <?php if (!$policyFiles): ?>
+        <div class="small muted">No documents uploaded.</div>
+      <?php else: ?>
+        <table>
+          <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
+          <tbody>
+            <?php foreach ($policyFiles as $f): ?>
+              <tr>
+                <td><a href="<?= Util::baseUrl('file.php?id='.(int)$f['id'].'&download=1') ?>"><?= Util::h($f['filename']) ?></a></td>
+                <td><?= Util::h($f['mime_type']) ?></td>
+                <td><?= number_format((int)$f['size']) ?> bytes</td>
+                <td><?= Util::h($f['uploaded_at']) ?></td>
+                <td>
+                  <form method="post" onsubmit="return confirmAction('Delete document?')">
+                    <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                    <input type="hidden" name="action" value="delete_file">
+                    <input type="hidden" name="file_id" value="<?= (int)$f['id'] ?>">
+                    <button class="btn ghost danger">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    </div>
+  </div>
 </div>
 <?php endif; ?>
-

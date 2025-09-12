@@ -2,9 +2,6 @@
 require_once __DIR__ . '/../lib/Util.php';
 require_once __DIR__ . '/../lib/Database.php';
 
-// Ensure uploads dir exists
-Util::ensureUploadsDir();
-
 // Router
 $page = $_GET['page'] ?? 'dashboard';
 
@@ -34,4 +31,3 @@ switch ($page) {
 }
 
 include __DIR__ . '/../includes/footer.php';
-

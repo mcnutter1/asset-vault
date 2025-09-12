@@ -52,3 +52,4 @@ window.addEventListener('DOMContentLoaded', ()=>{
     if (json) drawLineChart(c, JSON.parse(json));
   });
 });
+
