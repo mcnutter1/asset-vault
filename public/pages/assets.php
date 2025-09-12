@@ -11,8 +11,18 @@ if (($_POST['action'] ?? '') === 'delete') {
   Util::redirect('index.php?page=assets');
 }
 
+// Generate public link token
+if (($_POST['action'] ?? '') === 'gen_token') {
+  Util::checkCsrf();
+  $id = (int)($_POST['id'] ?? 0);
+  $token = bin2hex(random_bytes(12));
+  $stmt = $pdo->prepare('UPDATE assets SET public_token=? WHERE id=?');
+  $stmt->execute([$token, $id]);
+  Util::redirect('index.php?page=assets');
+}
+
 // Fetch assets tree
-$assets = $pdo->query('SELECT a.id, a.name, a.parent_id, ac.name AS category, l.name AS locname FROM assets a 
+$assets = $pdo->query('SELECT a.id, a.name, a.parent_id, a.public_token, ac.name AS category, l.name AS locname FROM assets a 
   LEFT JOIN asset_categories ac ON ac.id=a.category_id 
   LEFT JOIN locations l ON l.id=a.location_id
   WHERE a.is_deleted=0 
@@ -28,6 +38,17 @@ function renderTree($parentId, $byParent) {
     echo '<span class="name">'.Util::h($a['name']).'</span> <span class="small muted">'.Util::h($a['category'])."</span> ";
     if (!empty($a['locname'])) echo '<span class="pill">'.Util::h($a['locname']).'</span> ';
     echo ' <a class="btn ghost" href="'.Util::baseUrl('index.php?page=asset_edit&id='.(int)$a['id']).'">Edit</a>';
+    if (!empty($a['public_token'])) {
+      $viewUrl = Util::baseUrl('index.php?page=asset_view&code='.$a['public_token']);
+      echo ' <a class="btn ghost" href="'.$viewUrl.'" target="_blank">View</a>';
+    } else {
+      echo ' <form method="post" style="display:inline" onsubmit="return confirmAction(\'Create public link for this asset?\')">';
+      echo '<input type="hidden" name="csrf" value="'.Util::csrfToken().'">';
+      echo '<input type="hidden" name="action" value="gen_token">';
+      echo '<input type="hidden" name="id" value="'.(int)$a['id'].'">';
+      echo '<button class="btn ghost" type="submit">Create Link</button>';
+      echo '</form>';
+    }
     echo ' <form method="post" style="display:inline" onsubmit="return confirmAction(\'Delete asset?\')">';
     echo '<input type="hidden" name="csrf" value="'.Util::csrfToken().'">';
     echo '<input type="hidden" name="action" value="delete">';

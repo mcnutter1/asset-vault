@@ -82,7 +82,7 @@ if (($_POST['action'] ?? '') === 'save') {
       $cn = $stmt->fetchColumn();
       $catName = strtolower($cn ?: '');
     }
-    $addrType = (in_array($catName, ['home','house','property'])) ? 'physical' : (in_array($catName, ['vehicle','car','boat'])) ? 'storage' : '';
+    $addrType = (in_array($catName, ['home','house','property'])) ? 'physical' : ((in_array($catName, ['vehicle','car','boat'])) ? 'storage' : '');
     if ($addrType) {
       $line1 = trim($_POST['addr_line1'] ?? '');
       $line2 = trim($_POST['addr_line2'] ?? '');
@@ -228,7 +228,7 @@ if ($isEdit) {
         if (!empty($asset['category_id'])) {
           foreach ($cats as $c) if ($c['id'] == $asset['category_id']) { $catName = strtolower($c['name']); break; }
         }
-        $addrType = (in_array($catName, ['home','house','property'])) ? 'physical' : (in_array($catName, ['vehicle','car','boat'])) ? 'storage' : '';
+        $addrType = (in_array($catName, ['home','house','property'])) ? 'physical' : ((in_array($catName, ['vehicle','car','boat'])) ? 'storage' : '');
         $addr = null;
         if ($isEdit && $addrType) {
           $stmt = $pdo->prepare('SELECT * FROM asset_addresses WHERE asset_id=? AND address_type=?');
