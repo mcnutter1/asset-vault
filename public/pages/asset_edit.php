@@ -426,7 +426,8 @@ if ($isEdit) {
       });
     }
   })();
-</script>
+ </script>
+  </div>
   </div>
   <div class="col-4">
     <div class="card settings sticky">
