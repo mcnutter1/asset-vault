@@ -29,6 +29,12 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, H
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
 .card + .card { margin-top: 16px; }
 
+/* Page header (polished) */
+.page-header { margin: 10px 0 18px; border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%); box-shadow: 0 6px 18px rgba(17,82,147,0.08); }
+.page-header .header-card { gap: 20px; }
+.header-title { font-size: 24px; font-weight: 800; letter-spacing: 0.2px; }
+.header-meta .btn.ghost { border-color: var(--border); }
+
 .row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
 .col-12 { grid-column: span 12; }
 .col-6 { grid-column: span 12; }
@@ -102,3 +108,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: upp
 .header-title { font-size: 22px; font-weight: 700; }
 .header-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .value-pill { padding: 4px 10px; border-radius: 999px; background: #e8f0fe; color: var(--primary); border: 1px solid var(--primary); font-weight: 600; }
+
+/* Settings sidebar */
+.card.settings { background: #f8fafc; }
+.sticky { position: sticky; top: 76px; }

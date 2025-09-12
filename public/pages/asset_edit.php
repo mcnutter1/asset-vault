@@ -192,7 +192,7 @@ if ($isEdit) {
 ?>
 
 <?php if ($isEdit): ?>
-<div class="card" style="margin-bottom:16px">
+<div class="page-header">
   <div class="header-card">
     <div class="header-left">
       <div class="header-title"><?= Util::h($asset['name']) ?></div>
@@ -201,9 +201,10 @@ if ($isEdit) {
         <a class="btn ghost" href="<?= $publicUrl ?>" target="_blank">Open Public View</a>
         <span class="value-pill">Current: <?= $currentValue!==null? ('$'.number_format($currentValue,2)) : '—' ?></span>
       </div>
+      <div class="small muted">Public URL: <a href="<?= $publicUrl ?>" target="_blank"><?= $publicUrl ?></a></div>
     </div>
     <div class="header-right">
-      <img alt="QR" style="height:110px;border:1px solid #e5e7eb;border-radius:8px" src="https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl=<?= urlencode($publicUrl) ?>&choe=UTF-8">
+      <img alt="QR" style="height:110px;border:1px solid var(--border);border-radius:10px;background:#fff" src="https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl=<?= urlencode($publicUrl) ?>&choe=UTF-8">
     </div>
   </div>
 </div>
@@ -428,7 +429,7 @@ if ($isEdit) {
 </script>
   </div>
   <div class="col-4">
-    <div class="card">
+    <div class="card settings sticky">
       <h1>Configuration</h1>
       <?php if ($isEdit): ?>
       <div style="margin-top:8px">
