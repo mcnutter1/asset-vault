@@ -5,8 +5,8 @@ return [
         'host' => '127.0.0.1',
         'port' => 3306,
         'name' => 'asset_vault',
-        'user' => 'root',
-        'pass' => '',
+        'user' => 'asset_vault_app',
+        'pass' => 'MvX2qC9tJ7rN4bP1yL6gF3wZ8kH5sD0',
         'charset' => 'utf8mb4',
     ],
     'app' => [
