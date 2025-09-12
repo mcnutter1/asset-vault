@@ -6,7 +6,17 @@ $isEdit = $id > 0;
 
 // Fetch categories and parents
 $cats = $pdo->query('SELECT id, name FROM asset_categories ORDER BY name')->fetchAll();
-$locations = $pdo->query('SELECT id, name FROM locations ORDER BY name')->fetchAll();
+// Parent-defined locations available for this asset
+$parentLocations = [];
+// Determine parent id for this form state (existing or chosen parent)
+$formParentId = null;
+if ($isEdit) { $formParentId = $asset['parent_id'] ?? null; }
+if ($formParentId === null && isset($_POST['parent_id']) && $_POST['parent_id']!=='') { $formParentId = (int)$_POST['parent_id']; }
+if ($formParentId) {
+  $stmt = $pdo->prepare('SELECT id, name FROM asset_locations WHERE asset_id=? ORDER BY name');
+  $stmt->execute([$formParentId]);
+  $parentLocations = $stmt->fetchAll();
+}
 $parents = $pdo->query('SELECT id, name FROM assets WHERE is_deleted=0 ORDER BY name')->fetchAll();
 
 // Save asset
@@ -25,16 +35,16 @@ if (($_POST['action'] ?? '') === 'save') {
   $notes = trim($_POST['notes'] ?? '');
 
   if ($isEdit) {
-    $location_id = $_POST['location_id'] ? (int)$_POST['location_id'] : null;
-    $stmt = $pdo->prepare('UPDATE assets SET name=?, category_id=?, parent_id=?, description=?, location=?, make=?, model=?, serial_number=?, year=?, purchase_date=?, notes=?, location_id=? WHERE id=?');
-    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $location_id, $id]);
+    $asset_location_id = isset($_POST['asset_location_id']) && $_POST['asset_location_id']!=='' ? (int)$_POST['asset_location_id'] : null;
+    $stmt = $pdo->prepare('UPDATE assets SET name=?, category_id=?, parent_id=?, description=?, location=?, make=?, model=?, serial_number=?, year=?, purchase_date=?, notes=?, asset_location_id=? WHERE id=?');
+    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $asset_location_id, $id]);
     $pdo->prepare('INSERT INTO audit_log(entity_type, entity_id, action, details) VALUES ("asset", ?, "update", NULL)')->execute([$id]);
   } else {
-    $location_id = $_POST['location_id'] ? (int)$_POST['location_id'] : null;
+    $asset_location_id = isset($_POST['asset_location_id']) && $_POST['asset_location_id']!=='' ? (int)$_POST['asset_location_id'] : null;
     // generate public token
     $token = bin2hex(random_bytes(12));
-    $stmt = $pdo->prepare('INSERT INTO assets(name, category_id, parent_id, description, location, make, model, serial_number, year, purchase_date, notes, location_id, public_token) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
-    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $location_id, $token]);
+    $stmt = $pdo->prepare('INSERT INTO assets(name, category_id, parent_id, description, location, make, model, serial_number, year, purchase_date, notes, asset_location_id, public_token) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $asset_location_id, $token]);
     $id = (int)$pdo->lastInsertId();
     $pdo->prepare('INSERT INTO audit_log(entity_type, entity_id, action, details) VALUES ("asset", ?, "create", NULL)')->execute([$id]);
     $isEdit = true;
@@ -104,7 +114,7 @@ if (($_POST['action'] ?? '') === 'save') {
 
 // Fetch existing asset
 $asset = [
-  'name'=>'','category_id'=>'','parent_id'=>'','description'=>'','location'=>'','make'=>'','model'=>'','serial_number'=>'','year'=>'','purchase_date'=>'','notes'=>'','location_id'=>'','public_token'=>''
+  'name'=>'','category_id'=>'','parent_id'=>'','description'=>'','location'=>'','make'=>'','model'=>'','serial_number'=>'','year'=>'','purchase_date'=>'','notes'=>'','asset_location_id'=>'','public_token'=>''
 ];
 if ($isEdit) {
   $stmt = $pdo->prepare('SELECT * FROM assets WHERE id=?');
@@ -193,13 +203,20 @@ if ($isEdit) {
         </select>
       </div>
       <div class="col-3">
-        <label>Location (Reusable)</label>
-        <select name="location_id">
-          <option value="">--</option>
-          <?php foreach ($locations as $loc): ?>
-            <option value="<?= (int)$loc['id'] ?>" <?= $asset['location_id']==$loc['id']?'selected':'' ?>><?= Util::h($loc['name']) ?></option>
-          <?php endforeach; ?>
-        </select>
+        <label>Location (from Parent)</label>
+        <?php if ($formParentId && $parentLocations): ?>
+          <select name="asset_location_id">
+            <option value="">--</option>
+            <?php foreach ($parentLocations as $loc): ?>
+              <option value="<?= (int)$loc['id'] ?>" <?= $asset['asset_location_id']==$loc['id']?'selected':'' ?>><?= Util::h($loc['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+          <div class="small muted">Locations defined on the parent asset.</div>
+        <?php elseif (!$formParentId): ?>
+          <div class="small muted">Select a Parent Asset to choose a location.</div>
+        <?php else: ?>
+          <div class="small muted">No locations defined on the parent asset.</div>
+        <?php endif; ?>
       </div>
       <div class="col-3">
         <label>Parent Asset</label>
@@ -324,6 +341,65 @@ if ($isEdit) {
           </table>
         <?php endif; ?>
       </div>
+      <?php if ($isEdit): ?>
+      <div class="col-12">
+        <h2>Locations for Contents</h2>
+        <?php
+          // Manage locations owned by this asset
+          if (($_POST['action'] ?? '') === 'add_loc') {
+            Util::checkCsrf();
+            $n = trim($_POST['loc_name'] ?? '');
+            $d = trim($_POST['loc_desc'] ?? '');
+            if ($n !== '') {
+              $stmt = $pdo->prepare('INSERT INTO asset_locations(asset_id, name, description) VALUES (?,?,?)');
+              $stmt->execute([$id, $n, $d]);
+              Util::redirect('index.php?page=asset_edit&id='.$id);
+            }
+          }
+          if (($_POST['action'] ?? '') === 'del_loc') {
+            Util::checkCsrf();
+            $lid = (int)($_POST['loc_id'] ?? 0);
+            // unlink children using this location
+            $pdo->prepare('UPDATE assets SET asset_location_id=NULL WHERE parent_id=? AND asset_location_id=?')->execute([$id, $lid]);
+            $pdo->prepare('DELETE FROM asset_locations WHERE id=? AND asset_id=?')->execute([$lid, $id]);
+            Util::redirect('index.php?page=asset_edit&id='.$id);
+          }
+          $ownedLocs = $pdo->prepare('SELECT * FROM asset_locations WHERE asset_id=? ORDER BY name');
+          $ownedLocs->execute([$id]);
+          $ownedLocs = $ownedLocs->fetchAll();
+        ?>
+        <form method="post" class="row" style="margin-bottom:8px">
+          <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+          <input type="hidden" name="action" value="add_loc">
+          <div class="col-4"><label>Name</label><input name="loc_name" required></div>
+          <div class="col-6"><label>Description</label><input name="loc_desc"></div>
+          <div class="col-2" style="display:flex;align-items:flex-end"><button class="btn" type="submit">Add</button></div>
+        </form>
+        <?php if (!$ownedLocs): ?>
+          <div class="small muted">No locations defined for this asset.</div>
+        <?php else: ?>
+          <table>
+            <thead><tr><th>Name</th><th>Description</th><th></th></tr></thead>
+            <tbody>
+              <?php foreach ($ownedLocs as $ol): ?>
+                <tr>
+                  <td><?= Util::h($ol['name']) ?></td>
+                  <td><?= Util::h($ol['description']) ?></td>
+                  <td>
+                    <form method="post" onsubmit="return confirmAction('Delete location? Child assets using it will be unassigned.')">
+                      <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                      <input type="hidden" name="action" value="del_loc">
+                      <input type="hidden" name="loc_id" value="<?= (int)$ol['id'] ?>">
+                      <button class="btn ghost danger">Delete</button>
+                    </form>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
       <?php if ($isEdit): ?>
       <div class="col-12">
         <h2>Public Link</h2>

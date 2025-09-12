@@ -22,9 +22,9 @@ if (($_POST['action'] ?? '') === 'gen_token') {
 }
 
 // Fetch assets tree
-$assets = $pdo->query('SELECT a.id, a.name, a.parent_id, a.public_token, ac.name AS category, l.name AS locname FROM assets a 
+$assets = $pdo->query('SELECT a.id, a.name, a.parent_id, a.public_token, ac.name AS category, al.name AS locname FROM assets a 
   LEFT JOIN asset_categories ac ON ac.id=a.category_id 
-  LEFT JOIN locations l ON l.id=a.location_id
+  LEFT JOIN asset_locations al ON al.id=a.asset_location_id
   WHERE a.is_deleted=0 
   ORDER BY a.parent_id IS NOT NULL, a.parent_id, a.name')->fetchAll();
 $byParent = [];

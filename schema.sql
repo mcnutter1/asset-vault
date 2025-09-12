@@ -44,18 +44,23 @@ CREATE TABLE IF NOT EXISTS assets (
 );
 
 -- Reusable Locations (e.g., rooms in a house, storage units, garages)
-CREATE TABLE IF NOT EXISTS locations (
+-- Scoped locations owned by an asset; children can use these
+CREATE TABLE IF NOT EXISTS asset_locations (
   id INT AUTO_INCREMENT PRIMARY KEY,
+  asset_id INT NOT NULL,
   parent_id INT NULL,
   name VARCHAR(150) NOT NULL,
   description VARCHAR(255) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_locations_parent FOREIGN KEY (parent_id) REFERENCES locations(id) ON DELETE SET NULL
+  CONSTRAINT fk_asset_locations_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+  CONSTRAINT fk_asset_locations_parent FOREIGN KEY (parent_id) REFERENCES asset_locations(id) ON DELETE SET NULL,
+  UNIQUE KEY uniq_asset_location_name (asset_id, name)
 );
 
--- Link assets to locations (after locations table exists)
+-- Add asset-scoped location reference on assets
+ALTER TABLE assets ADD COLUMN asset_location_id INT NULL;
 ALTER TABLE assets
-  ADD CONSTRAINT fk_assets_location FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL;
+  ADD CONSTRAINT fk_assets_asset_location FOREIGN KEY (asset_location_id) REFERENCES asset_locations(id) ON DELETE SET NULL;
 
 -- Public token unique for shareable links
 ALTER TABLE assets

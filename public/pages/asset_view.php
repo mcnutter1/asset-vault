@@ -5,9 +5,9 @@ $pdo = Database::get();
 $code = $_GET['code'] ?? '';
 if (!$code) { http_response_code(404); echo '<div class="card"><h1>Not Found</h1></div>'; return; }
 
-$stmt = $pdo->prepare('SELECT a.*, ac.name AS category_name, l.name AS location_name FROM assets a 
+$stmt = $pdo->prepare('SELECT a.*, ac.name AS category_name, al.name AS location_name FROM assets a 
   LEFT JOIN asset_categories ac ON ac.id=a.category_id 
-  LEFT JOIN locations l ON l.id=a.location_id
+  LEFT JOIN asset_locations al ON al.id=a.asset_location_id
   WHERE a.public_token=? AND a.is_deleted=0');
 $stmt->execute([$code]);
 $asset = $stmt->fetch();
@@ -19,9 +19,9 @@ $stmt->execute([(int)$asset['id']]);
 $photos = $stmt->fetchAll();
 
 // Build contents (children) table with values
-$allAssets = $pdo->query('SELECT a.id, a.name, a.parent_id, ac.name AS category, l.name AS locname FROM assets a 
+$allAssets = $pdo->query('SELECT a.id, a.name, a.parent_id, ac.name AS category, al.name AS locname FROM assets a 
   LEFT JOIN asset_categories ac ON ac.id=a.category_id 
-  LEFT JOIN locations l ON l.id=a.location_id
+  LEFT JOIN asset_locations al ON al.id=a.asset_location_id
   WHERE a.is_deleted=0 ORDER BY a.parent_id, a.name')->fetchAll();
 $byParent = [];
 foreach ($allAssets as $a) { $byParent[$a['parent_id'] ?? 0][] = $a; }
