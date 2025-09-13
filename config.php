@@ -15,4 +15,7 @@ return [
         'uploads_url' => '/uploads',
         'debug' => true,
     ],
+    'openai' => [
+        'api_key' => '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',
+    ],
 ];

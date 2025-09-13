@@ -1,0 +1,201 @@
+<?php
+
+class AiClient
+{
+    private string $apiKey;
+    private string $baseUrl;
+    private string $model;
+
+    public function __construct(?string $apiKey = null, string $model = 'gpt-4.1-mini', string $baseUrl = 'https://api.openai.com/v1')
+    {
+        $apiKey = $apiKey ?? getenv('OPENAI_API_KEY') ?: '';
+        if (!$apiKey) {
+            throw new RuntimeException('OPENAI_API_KEY not set');
+        }
+        $this->apiKey = $apiKey;
+        $this->baseUrl = rtrim($baseUrl, '/');
+        $this->model = $model;
+    }
+
+    /**
+     * Calls the Responses API with JSON schema response_format and returns parsed JSON array.
+     * @param array $systemMessages array of strings or single string for system guidance
+     * @param array $userPayload arbitrary array payload to send as the user message
+     * @param array $schema JSON schema object as array (the schema value within response_format)
+     * @param float $temperature
+     * @return array
+     */
+    public function callJson(array $systemMessages, array $userPayload, array $schema, float $temperature = 0.2): array
+    {
+        $url = $this->baseUrl . '/responses';
+
+        // Normalize system messages to array of role/content
+        $msgs = [];
+        foreach ($systemMessages as $s) {
+            $msgs[] = ['role' => 'system', 'content' => (string)$s];
+        }
+        $msgs[] = ['role' => 'user', 'content' => json_encode($userPayload, JSON_UNESCAPED_SLASHES)];
+
+        $payload = [
+            'model' => $this->model,
+            'input' => $msgs,
+            'temperature' => $temperature,
+            'response_format' => [
+                'type' => 'json_schema',
+                'json_schema' => $schema,
+            ],
+        ];
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $this->apiKey,
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+        ]);
+        $raw = curl_exec($ch);
+        if ($raw === false) {
+            $err = curl_error($ch);
+            curl_close($ch);
+            throw new RuntimeException('cURL error: ' . $err);
+        }
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $resp = json_decode($raw, true);
+        if ($code >= 400) {
+            $msg = $resp['error']['message'] ?? substr($raw, 0, 400);
+            throw new RuntimeException('API error (' . $code . '): ' . $msg);
+        }
+
+        // Try to extract model JSON output
+        $jsonText = $resp['output'][0]['content'][0]['text']
+            ?? $resp['output_text']
+            ?? null;
+
+        if (!$jsonText) {
+            throw new RuntimeException('Unexpected API response: ' . substr($raw, 0, 400));
+        }
+
+        $parsed = json_decode($jsonText, true);
+        if (!is_array($parsed)) {
+            throw new RuntimeException('Model did not return JSON. Got: ' . $jsonText);
+        }
+        return $parsed;
+    }
+}
+
+class ValueEstimators
+{
+    /**
+     * House valuation. Accepts available fields; optional fields may be omitted.
+     */
+    public static function valueHouse(AiClient $ai, array $house): array
+    {
+        $schema = [
+            'name' => 'HouseValuation',
+            'schema' => [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'properties' => [
+                    'house' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'address' => ['type' => 'string'],
+                            'city' => ['type' => 'string'],
+                            'state' => ['type' => 'string'],
+                            'zip' => ['type' => 'string'],
+                            'sq_ft' => ['type' => 'number'],
+                            'lot_size_acres' => ['type' => 'number'],
+                            'year_built' => ['type' => 'integer'],
+                            'beds' => ['type' => 'integer'],
+                            'baths' => ['type' => 'number'],
+                            'condition' => ['type' => 'string']
+                        ],
+                    ],
+                    'valuation' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'market_value_usd' => ['type' => 'number'],
+                            'replacement_cost_usd' => ['type' => 'number'],
+                            'assumptions' => ['type' => 'string'],
+                            'confidence' => ['type' => 'string', 'enum' => ['low','medium','high']],
+                            'sources' => ['type' => 'array', 'items' => ['type' => 'string']]
+                        ],
+                        'required' => ['market_value_usd','replacement_cost_usd']
+                    ]
+                ],
+                'required' => ['house','valuation']
+            ],
+            'strict' => true
+        ];
+
+        $system = [
+            "You are a property valuation assistant.",
+            "Estimate current MARKET VALUE (like Zillow) and REPLACEMENT COST (cost to rebuild) for U.S. homes. Return USD numbers.",
+        ];
+        $user = [
+            'task' => 'value_house',
+            'house' => $house,
+        ];
+        return $ai->callJson($system, $user, $schema);
+    }
+
+    /**
+     * Electronics valuation for devices (TVs, laptops, phones, etc.).
+     */
+    public static function valueElectronics(AiClient $ai, array $device): array
+    {
+        $schema = [
+            'name' => 'ElectronicsValuation',
+            'schema' => [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'properties' => [
+                    'device' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'category' => ['type' => 'string'],
+                            'brand' => ['type' => 'string'],
+                            'model' => ['type' => 'string'],
+                            'year' => ['type' => 'integer'],
+                            'condition' => ['type' => 'string'],
+                            'purchase_price_usd' => ['type' => 'number'],
+                            'purchase_date' => ['type' => 'string']
+                        ]
+                    ],
+                    'valuation' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'market_value_usd' => ['type' => 'number'],
+                            'replacement_cost_usd' => ['type' => 'number'],
+                            'assumptions' => ['type' => 'string'],
+                            'confidence' => ['type' => 'string', 'enum' => ['low','medium','high']],
+                            'sources' => ['type' => 'array', 'items' => ['type' => 'string']]
+                        ],
+                        'required' => ['market_value_usd','replacement_cost_usd']
+                    ]
+                ],
+                'required' => ['device','valuation']
+            ],
+            'strict' => true
+        ];
+
+        $system = [
+            "You are a consumer electronics resale assistant.",
+            "Estimate CURRENT MARKET VALUE (resale) and REPLACEMENT COST (buy new) in USD for the described device.",
+        ];
+        $user = [
+            'task' => 'value_electronics',
+            'device' => $device,
+        ];
+        return $ai->callJson($system, $user, $schema);
+    }
+}
+

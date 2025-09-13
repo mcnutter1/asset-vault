@@ -300,8 +300,11 @@ if ($isEdit) {
         <div class="col-4"><label>Country</label><input name="addr_country" value="<?= Util::h($addr['country'] ?? '') ?>"></div>
       <?php endif; ?>
 
-      <div class="col-12">
+      <div class="col-12" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
         <h2>Valuations</h2>
+        <?php if ($isEdit): ?>
+          <button class="btn outline" id="aiBtn">AI Estimate</button>
+        <?php endif; ?>
         <div class="input-row">
           <div>
             <label>Purchase Amount</label>
@@ -352,6 +355,32 @@ if ($isEdit) {
           </div>
         <?php endif; ?>
       </div>
+
+<?php if ($isEdit): ?>
+<!-- AI Modal -->
+<div class="modal-backdrop" id="aiModal">
+  <div class="modal" style="width:min(760px,92vw)">
+    <div class="head"><strong>AI Valuation</strong><button class="x" data-modal-close="aiModal">✕</button></div>
+    <div class="body">
+      <div id="aiLoading" style="display:flex;align-items:center;gap:8px"><div class="spinner"></div><div>Contacting AI…</div></div>
+      <div id="aiResult" style="display:none">
+        <div class="row">
+          <div class="col-6"><label>Market Value (USD)</label><input id="ai_market" type="number" step="0.01"></div>
+          <div class="col-6"><label>Replacement Cost (USD)</label><input id="ai_replace" type="number" step="0.01"></div>
+          <div class="col-12"><label>Confidence</label><input id="ai_confidence" readonly></div>
+          <div class="col-12"><label>Assumptions</label><textarea id="ai_assumptions" rows="3" readonly></textarea></div>
+          <div class="col-12"><label>Sources</label><input id="ai_sources" readonly></div>
+        </div>
+      </div>
+      <div id="aiError" class="small muted" style="display:none;color:#dc2626"></div>
+    </div>
+    <div class="foot">
+      <button class="btn ghost" data-modal-close="aiModal">Close</button>
+      <button class="btn" id="aiApply" style="display:none">Apply to Asset</button>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
 
       <?php if ($isEdit): ?>
       <div class="col-12">
@@ -425,6 +454,45 @@ if ($isEdit) {
         }
       });
     }
+  })();
+  // AI handler
+  (function(){
+    var aiBtn = document.getElementById('aiBtn');
+    if (!aiBtn) return;
+    aiBtn.addEventListener('click', function(){
+      var modal = document.getElementById('aiModal');
+      if (modal) modal.classList.add('show');
+      var loading = document.getElementById('aiLoading');
+      var result = document.getElementById('aiResult');
+      var errorEl = document.getElementById('aiError');
+      var applyBtn = document.getElementById('aiApply');
+      loading.style.display='flex'; result.style.display='none'; errorEl.style.display='none'; applyBtn.style.display='none';
+      fetch('<?= Util::baseUrl('ai.php') ?>', {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>' })
+      }).then(r=>r.json()).then(data=>{
+        if (!data.ok) throw new Error(data.error||'Failed');
+        var val = data.data.valuation || {};
+        document.getElementById('ai_market').value = val.market_value_usd ?? '';
+        document.getElementById('ai_replace').value = val.replacement_cost_usd ?? '';
+        document.getElementById('ai_confidence').value = val.confidence ?? '';
+        document.getElementById('ai_assumptions').value = val.assumptions ?? '';
+        document.getElementById('ai_sources').value = (val.sources||[]).join(', ');
+        loading.style.display='none'; result.style.display='block'; applyBtn.style.display='inline-flex';
+        applyBtn.onclick = function(){
+          var mv = document.getElementById('ai_market').value;
+          var rc = document.getElementById('ai_replace').value;
+          fetch('<?= Util::baseUrl('ai.php') ?>', {
+            method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({ action:'apply', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', market_value_usd: mv, replacement_cost_usd: rc })
+          }).then(r=>r.json()).then(d=>{
+            if (!d.ok) throw new Error(d.error||'Failed to apply');
+            location.reload();
+          }).catch(e=>{ errorEl.textContent = e.message; errorEl.style.display='block'; });
+        }
+      }).catch(e=>{ loading.style.display='none'; errorEl.textContent = e.message; errorEl.style.display='block'; });
+    });
   })();
  </script>
   </div>

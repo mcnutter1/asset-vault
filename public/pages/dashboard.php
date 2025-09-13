@@ -36,34 +36,83 @@ $trendRows = $pdo->query("SELECT valuation_date d, SUM(amount) s FROM asset_valu
 $trend = [];
 foreach ($trendRows as $r) { $trend[] = ['x'=>$r['d'], 'y'=>(float)$r['s']]; }
 
-// Top-level assets and their individual trends
-$topAssets = $pdo->query("SELECT id, name FROM assets WHERE is_deleted=0 AND parent_id IS NULL ORDER BY name LIMIT 6")->fetchAll();
-$perAssetTrends = [];
-foreach ($topAssets as $ta) {
-  $stmt = $pdo->prepare("SELECT valuation_date d, amount s FROM asset_values WHERE asset_id=? AND value_type='current' ORDER BY valuation_date ASC");
-  $stmt->execute([(int)$ta['id']]);
-  $rows = $stmt->fetchAll();
-  $series = [];
-  foreach ($rows as $r) { $series[] = ['x'=>$r['d'], 'y'=>(float)$r['s']]; }
-  $perAssetTrends[] = ['id'=>(int)$ta['id'], 'name'=>$ta['name'], 'series'=>$series];
+// Load all assets for hierarchy operations
+$allAssets = $pdo->query('SELECT a.id, a.parent_id, a.name, ac.name AS category FROM assets a LEFT JOIN asset_categories ac ON ac.id=a.category_id WHERE a.is_deleted=0')->fetchAll();
+$byId = []; $byParent = [];
+foreach ($allAssets as $a){ $byId[$a['id']] = $a; $byParent[$a['parent_id'] ?? 0][] = $a; }
+
+// Helper: find root (top-most parent) for an asset id
+$rootMemo = [];
+$findRoot = function($id) use (&$findRoot, &$byId, &$rootMemo){
+  if (isset($rootMemo[$id])) return $rootMemo[$id];
+  $cur = $byId[$id] ?? null;
+  if (!$cur) return $rootMemo[$id] = $id;
+  while ($cur && !empty($cur['parent_id'])) { $cur = $byId[$cur['parent_id']] ?? null; }
+  return $rootMemo[$id] = ($cur['id'] ?? $id);
+};
+
+// Latest self current value per asset
+$rows = $pdo->query("SELECT av.asset_id, av.amount FROM asset_values av JOIN (SELECT asset_id, MAX(valuation_date) mx FROM asset_values WHERE value_type='current' GROUP BY asset_id) t ON t.asset_id=av.asset_id AND t.mx=av.valuation_date WHERE av.value_type='current'")->fetchAll();
+$selfCurrent = [];
+foreach ($rows as $r){ $selfCurrent[$r['asset_id']] = (float)$r['amount']; }
+
+// Total (plus contents): for each top-level asset, sum selfCurrent across its subtree
+$memoTotals = [];
+$sumSubtree = function($id) use (&$sumSubtree, &$byParent, &$selfCurrent, &$memoTotals){
+  if (isset($memoTotals[$id])) return $memoTotals[$id];
+  $sum = $selfCurrent[$id] ?? 0.0;
+  foreach ($byParent[$id] ?? [] as $c){ $sum += $sumSubtree($c['id']); }
+  return $memoTotals[$id] = $sum;
+};
+
+// Stats minus/plus contents
+$topLevel = $byParent[0] ?? [];
+$totalMinusContents = 0.0; // only top-level self values
+foreach ($topLevel as $t) { $totalMinusContents += ($selfCurrent[$t['id']] ?? 0.0); }
+$totalPlusContents = 0.0; // sum of subtree for each top-level (equals sum of all self)
+foreach ($topLevel as $t) { $totalPlusContents += $sumSubtree($t['id']); }
+
+// Build per-top asset aggregated trends (sum of subtree current values by date)
+$allCurr = $pdo->query("SELECT asset_id, valuation_date d, amount FROM asset_values WHERE value_type='current' ORDER BY valuation_date ASC")->fetchAll();
+$aggByRootDate = [];
+foreach ($allCurr as $r){
+  $rid = $findRoot($r['asset_id']);
+  $d = $r['d'];
+  if (!isset($aggByRootDate[$rid])) $aggByRootDate[$rid] = [];
+  if (!isset($aggByRootDate[$rid][$d])) $aggByRootDate[$rid][$d] = 0.0;
+  $aggByRootDate[$rid][$d] += (float)$r['amount'];
 }
+// Prepare series for a subset of top-level assets
+$perAssetCards = [];
+foreach ($topLevel as $t) {
+  $rid = $t['id'];
+  $dates = $aggByRootDate[$rid] ?? [];
+  ksort($dates);
+  $series = [];
+  foreach ($dates as $d=>$sum) { $series[] = ['x'=>$d, 'y'=>$sum]; }
+  $cat = $t['category'] ?? '';
+  $perAssetCards[] = [
+    'id' => (int)$rid,
+    'name' => $t['name'],
+    'category' => $cat,
+    'self' => ($selfCurrent[$rid] ?? 0.0),
+    'total' => $sumSubtree($rid),
+    'series' => $series,
+  ];
+}
+// Limit cards to first 8 for layout
+$perAssetCards = array_slice($perAssetCards, 0, 8);
 $expiring = $pdo->query("SELECT p.*, pg.display_name FROM policies p JOIN policy_groups pg ON pg.id=p.policy_group_id WHERE p.end_date >= CURDATE() AND p.end_date <= DATE_ADD(CURDATE(), INTERVAL 60 DAY) ORDER BY p.end_date ASC LIMIT 10")->fetchAll();
 
 ?>
 <div class="row">
-  <div class="col-6">
-    <div class="card">
-      <h1>Overview</h1>
-      <div class="list">
-        <div class="item"><div>Total Assets</div><div class="pill primary"><?= $assetsCount ?></div></div>
-        <div class="item"><div>Total Policies</div><div class="pill primary"><?= $policiesCount ?></div></div>
-        <div class="item"><div>Portfolio (Current)</div><div class="pill primary">$<?= number_format($totalCurrent,2) ?></div></div>
-        <div class="item"><div>Replacement Cost</div><div class="pill">$<?= number_format($totalReplace,2) ?></div></div>
-        <div class="item"><div>Coverage (Active)</div><div class="pill">$<?= number_format($totalCoverage,2) ?></div></div>
-        <div class="item"><div>Over / Under</div><div class="pill <?= $overUnder>=0?'primary':'danger' ?>"><?= ($overUnder>=0?'+':'-') ?>$<?= number_format(abs($overUnder),2) ?></div></div>
-      </div>
-    </div>
-  </div>
+  <div class="col-3"><div class="card stat"><div class="stat-title">Total Assets</div><div class="stat-value"><?= $assetsCount ?></div><div class="muted">Items in portfolio</div></div></div>
+  <div class="col-3"><div class="card stat"><div class="stat-title">Asset Value (− Contents)</div><div class="stat-value">$<?= number_format($totalMinusContents,2) ?></div><div class="muted">Top-level items only</div></div></div>
+  <div class="col-3"><div class="card stat"><div class="stat-title">Asset Value (+ Contents)</div><div class="stat-value">$<?= number_format($totalPlusContents,2) ?></div><div class="muted">Includes contents</div></div></div>
+  <div class="col-3"><div class="card stat"><div class="stat-title">Protection (Over/Under)</div><div class="stat-value <?= $overUnder>=0?'':'muted' ?>"><?= ($overUnder>=0?'+':'−') ?>$<?= number_format(abs($overUnder),2) ?></div><div class="muted">Coverage vs Replacement</div></div></div>
+</div>
+
+<div class="row" style="margin-top:16px">
   <div class="col-6">
     <div class="card">
       <h1>Upcoming Expirations</h1>
@@ -102,14 +151,26 @@ $expiring = $pdo->query("SELECT p.*, pg.display_name FROM policies p JOIN policy
   </div>
 </div>
 
-<?php if ($perAssetTrends): ?>
+<?php if ($perAssetCards): ?>
 <div class="row" style="margin-top:16px">
-  <?php foreach ($perAssetTrends as $pt): ?>
-  <div class="col-6">
-    <div class="card">
-      <h2><?= Util::h($pt['name']) ?></h2>
-      <div style="width:100%;height:180px">
-        <canvas data-autodraw data-series='<?= Util::h(json_encode($pt['series'])) ?>' style="width:100%;height:180px"></canvas>
+  <?php foreach ($perAssetCards as $pt): ?>
+    <?php
+      $icon = '📦';
+      $cat = strtolower($pt['category'] ?? '');
+      if (strpos($cat,'home')!==false || strpos($cat,'house')!==false) $icon='🏠';
+      elseif (strpos($cat,'vehicle')!==false || strpos($cat,'car')!==false) $icon='🚗';
+      elseif (strpos($cat,'boat')!==false) $icon='🚤';
+      elseif (strpos($cat,'elect')!==false) $icon='📺';
+      elseif (strpos($cat,'furn')!==false) $icon='🛋️';
+      elseif (strpos($cat,'appliance')!==false) $icon='🧺';
+      elseif (strpos($cat,'jewel')!==false) $icon='💍';
+    ?>
+  <div class="col-3">
+    <div class="card mini">
+      <div class="top"><div class="icon"><?= $icon ?></div><div class="name"><?= Util::h($pt['name']) ?></div></div>
+      <div class="small muted">Self: $<?= number_format($pt['self'],2) ?> • Total: $<?= number_format($pt['total'],2) ?></div>
+      <div style="width:100%;height:120px">
+        <canvas data-autodraw data-series='<?= Util::h(json_encode($pt['series'])) ?>' style="width:100%;height:120px"></canvas>
       </div>
     </div>
   </div>
