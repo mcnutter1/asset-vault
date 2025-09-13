@@ -300,11 +300,13 @@ if ($isEdit) {
         <div class="col-4"><label>Country</label><input name="addr_country" value="<?= Util::h($addr['country'] ?? '') ?>"></div>
       <?php endif; ?>
 
-      <div class="col-12" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div class="col-12 section-head">
         <h2>Valuations</h2>
         <?php if ($isEdit): ?>
-          <button class="btn outline" id="aiBtn">AI Estimate</button>
+          <button class="btn outline" id="aiBtn" type="button">AI Estimate</button>
         <?php endif; ?>
+      </div>
+      <div class="col-12">
         <div class="input-row">
           <div>
             <label>Purchase Amount</label>
@@ -325,7 +327,8 @@ if ($isEdit) {
             <input type="date" name="replace_date">
           </div>
         </div>
-        <?php if ($values): ?>
+      </div>
+      <?php if ($values): ?>
           <div class="small" style="margin-top:8px">History (most recent last):</div>
           <table>
             <thead><tr><th>Type</th><th>Amount</th><th>Date</th></tr></thead>
@@ -341,8 +344,7 @@ if ($isEdit) {
               <canvas data-autodraw data-series='<?= Util::h(json_encode($seriesCurrent)) ?>' style="width:100%;height:160px"></canvas>
             </div>
           <?php endif; ?>
-        <?php endif; ?>
-      </div>
+      <?php endif; ?>
 
       <div class="col-12">
         <h2>Photos</h2>

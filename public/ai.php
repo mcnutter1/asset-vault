@@ -25,48 +25,52 @@ try {
   if (!$asset) json_out(['ok'=>false,'error'=>'Asset not found'], 404);
 
   if ($action === 'estimate') {
-    $aiKey = Settings::get('openai_api_key', Util::config()['openai']['api_key'] ?? null);
-    $ai = new AiClient($aiKey);
-    $category = strtolower($asset['category_name'] ?? '');
+    try {
+      $aiKey = Settings::get('openai_api_key', Util::config()['openai']['api_key'] ?? null);
+      $ai = new AiClient($aiKey);
+      $category = strtolower($asset['category_name'] ?? '');
 
-    if (strpos($category, 'home') !== false || strpos($category, 'house') !== false || $category === 'home') {
-      // House: gather address
-      $addrStmt = $pdo->prepare("SELECT * FROM asset_addresses WHERE asset_id=? AND address_type='physical' ORDER BY updated_at DESC LIMIT 1");
-      $addrStmt->execute([$assetId]);
-      $addr = $addrStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-      $house = [
-        'address' => $addr['line1'] ?? '',
-        'city' => $addr['city'] ?? '',
-        'state' => $addr['state'] ?? '',
-        'zip' => $addr['postal_code'] ?? '',
-        'sq_ft' => null,
-        'lot_size_acres' => null,
-        'year_built' => $asset['year'] ?? null,
-        'beds' => null,
-        'baths' => null,
-        'condition' => null,
-      ];
-      $result = ValueEstimators::valueHouse($ai, $house);
-      json_out(['ok'=>true,'type'=>'house','data'=>$result]);
-    } elseif (strpos($category, 'elect') !== false) {
-      // Electronics: build device payload
-      // Latest purchase value if any
-      $pv = $pdo->prepare("SELECT amount FROM asset_values WHERE asset_id=? AND value_type='purchase' ORDER BY valuation_date DESC LIMIT 1");
-      $pv->execute([$assetId]);
-      $purchase = $pv->fetchColumn();
-      $device = [
-        'category' => $asset['category_name'] ?? 'Electronics',
-        'brand' => $asset['make'] ?? '',
-        'model' => $asset['model'] ?? '',
-        'year' => $asset['year'] ?? null,
-        'condition' => null,
-        'purchase_price_usd' => $purchase !== false ? (float)$purchase : null,
-        'purchase_date' => $asset['purchase_date'] ?? null,
-      ];
-      $result = ValueEstimators::valueElectronics($ai, $device);
-      json_out(['ok'=>true,'type'=>'electronics','data'=>$result]);
-    } else {
-      json_out(['ok'=>false,'error'=>'Unsupported category for AI'], 400);
+      if (strpos($category, 'home') !== false || strpos($category, 'house') !== false || $category === 'home' || strpos($category, 'property') !== false) {
+        // House: gather address and format full string
+        $addrStmt = $pdo->prepare("SELECT * FROM asset_addresses WHERE asset_id=? AND address_type='physical' ORDER BY updated_at DESC LIMIT 1");
+        $addrStmt->execute([$assetId]);
+        $addr = $addrStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $address1 = trim(($addr['line1'] ?? '') . ' ' . ($addr['line2'] ?? ''));
+        $house = [
+          'address' => $address1,
+          'city' => $addr['city'] ?? '',
+          'state' => $addr['state'] ?? '',
+          'zip' => $addr['postal_code'] ?? '',
+          'sq_ft' => null,
+          'lot_size_acres' => null,
+          'year_built' => $asset['year'] ?? null,
+          'beds' => null,
+          'baths' => null,
+          'condition' => substr(trim(($asset['description'] ?? '') . ' ' . ($asset['notes'] ?? '')), 0, 200),
+        ];
+        $result = ValueEstimators::valueHouse($ai, $house);
+        json_out(['ok'=>true,'type'=>'house','data'=>$result]);
+      } elseif (strpos($category, 'elect') !== false) {
+        // Electronics: build device payload
+        $pv = $pdo->prepare("SELECT amount FROM asset_values WHERE asset_id=? AND value_type='purchase' ORDER BY valuation_date DESC LIMIT 1");
+        $pv->execute([$assetId]);
+        $purchase = $pv->fetchColumn();
+        $device = [
+          'category' => $asset['category_name'] ?? 'Electronics',
+          'brand' => $asset['make'] ?? '',
+          'model' => $asset['model'] ?? '',
+          'year' => $asset['year'] ?? null,
+          'condition' => substr(trim(($asset['description'] ?? '') . ' ' . ($asset['notes'] ?? '')), 0, 200),
+          'purchase_price_usd' => $purchase !== false ? (float)$purchase : null,
+          'purchase_date' => $asset['purchase_date'] ?? null,
+        ];
+        $result = ValueEstimators::valueElectronics($ai, $device);
+        json_out(['ok'=>true,'type'=>'electronics','data'=>$result]);
+      } else {
+        json_out(['ok'=>false,'error'=>'Unsupported category for AI'], 200);
+      }
+    } catch (Throwable $e) {
+      json_out(['ok'=>false,'error'=>$e->getMessage()], 200);
     }
   }
 
