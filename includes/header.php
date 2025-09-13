@@ -22,7 +22,7 @@ $page = $_GET['page'] ?? 'dashboard';
         <a href="<?= Util::baseUrl('index.php?page=dashboard') ?>" class="<?= $page==='dashboard'?'active':'' ?>">Dashboard</a>
         <a href="<?= Util::baseUrl('index.php?page=assets') ?>" class="<?= $page==='assets'?'active':'' ?>">Assets</a>
         <a href="<?= Util::baseUrl('index.php?page=policies') ?>" class="<?= $page==='policies'?'active':'' ?>">Policies</a>
-        <a href="<?= Util::baseUrl('index.php?page=coverages') ?>" class="<?= $page==='coverages'?'active':'' ?>">Coverages</a>
+        <a href="<?= Util::baseUrl('index.php?page=settings') ?>" class="<?= $page==='settings'?'active':'' ?>">Settings</a>
       </nav>
     </div>
   </div>

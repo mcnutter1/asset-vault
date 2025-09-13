@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../lib/Database.php';
 require_once __DIR__ . '/../lib/Util.php';
 require_once __DIR__ . '/../lib/Ai.php';
+require_once __DIR__ . '/../lib/Settings.php';
 
 header('Content-Type: application/json');
 
@@ -24,8 +25,7 @@ try {
   if (!$asset) json_out(['ok'=>false,'error'=>'Asset not found'], 404);
 
   if ($action === 'estimate') {
-    $cfg = Util::config();
-    $aiKey = $cfg['openai']['api_key'] ?? null;
+    $aiKey = Settings::get('openai_api_key', Util::config()['openai']['api_key'] ?? null);
     $ai = new AiClient($aiKey);
     $category = strtolower($asset['category_name'] ?? '');
 

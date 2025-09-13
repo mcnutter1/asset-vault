@@ -27,7 +27,12 @@ switch ($page) {
     include __DIR__ . '/pages/policy_edit.php';
     break;
   case 'coverages':
-    include __DIR__ . '/pages/coverages.php';
+    // Legacy route: redirect to settings coverages tab
+    header('Location: ' . Util::baseUrl('index.php?page=settings&tab=coverages'));
+    exit;
+    break;
+  case 'settings':
+    include __DIR__ . '/pages/settings.php';
     break;
   default:
     echo '<div class="card"><h1>Not Found</h1></div>';
