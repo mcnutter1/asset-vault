@@ -17,18 +17,17 @@ $cfgKey = (Util::config()['openai']['api_key'] ?? '');
 $prefillKey = $dbKey !== null ? $dbKey : $cfgKey;
 ?>
 
-<div class="row">
-  <div class="col-3">
-    <div class="card" style="position:sticky;top:76px">
-      <div class="list">
-        <a class="btn ghost <?= $tab==='general'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=general') ?>">General</a>
-        <a class="btn ghost <?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
-      </div>
+<div class="settings-wrap">
+  <aside class="settings-nav">
+    <div class="section-title">Configuration</div>
+    <div class="nav">
+      <a class="<?= $tab==='general'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=general') ?>">General</a>
+      <a class="<?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
     </div>
-  </div>
-  <div class="col-9">
+  </aside>
+  <div class="settings-content">
     <?php if ($tab==='general'): ?>
-      <div class="card">
+      <div class="settings-card">
         <h1>General</h1>
         <form method="post" class="row">
           <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
@@ -43,8 +42,7 @@ $prefillKey = $dbKey !== null ? $dbKey : $cfgKey;
     <?php elseif ($tab==='coverages'): ?>
       <?php include __DIR__ . '/coverages.php'; ?>
     <?php else: ?>
-      <div class="card"><h1>Unknown Settings</h1></div>
+      <div class="settings-card"><h1>Unknown Settings</h1></div>
     <?php endif; ?>
   </div>
 </div>
-

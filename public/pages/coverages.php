@@ -11,7 +11,7 @@ if (($_POST['action'] ?? '') === 'add') {
   $set = implode(',', array_map('trim', $types));
   $stmt = $pdo->prepare('INSERT INTO coverage_definitions(code, name, description, applicable_types) VALUES (?,?,?,?)');
   $stmt->execute([$code, $name, $desc, $set]);
-  Util::redirect('index.php?page=coverages');
+  Util::redirect('index.php?page=settings&tab=coverages');
 }
 
 // Remove coverage definition (only if unused)
@@ -22,15 +22,16 @@ if (($_POST['action'] ?? '') === 'remove') {
   if (!$inUse) {
     $pdo->prepare('DELETE FROM coverage_definitions WHERE id=?')->execute([$id]);
   }
-  Util::redirect('index.php?page=coverages');
+  Util::redirect('index.php?page=settings&tab=coverages');
 }
 
 $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAll();
 ?>
-<div class="row">
-  <div class="col-6">
-    <div class="card">
-      <h1>Coverage Library</h1>
+<div class="settings-card">
+  <h1>Coverages</h1>
+  <div class="row">
+    <div class="col-7">
+      <h2>Coverage Library</h2>
       <table>
         <thead><tr><th>Code</th><th>Name</th><th>Types</th><th></th></tr></thead>
         <tbody>
@@ -52,9 +53,7 @@ $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAl
         </tbody>
       </table>
     </div>
-  </div>
-  <div class="col-6">
-    <div class="card">
+    <div class="col-5">
       <h2>Add Coverage</h2>
       <form method="post">
         <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
@@ -78,4 +77,3 @@ $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAl
     </div>
   </div>
 </div>
-
