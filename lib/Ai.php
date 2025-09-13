@@ -36,14 +36,17 @@ class AiClient
         }
         $msgs[] = ['role' => 'user', 'content' => json_encode($userPayload, JSON_UNESCAPED_SLASHES)];
 
+        // Prefer new Responses API parameter: text.format (json_schema)
+        $jsonFormat = [
+            'type' => 'json_schema',
+            'json_schema' => $schema,
+        ];
+
         $payload = [
             'model' => $this->model,
             'input' => $msgs,
             'temperature' => $temperature,
-            'response_format' => [
-                'type' => 'json_schema',
-                'json_schema' => $schema,
-            ],
+            'text' => [ 'format' => $jsonFormat ],
         ];
 
         $ch = curl_init($url);
@@ -68,14 +71,49 @@ class AiClient
 
         $resp = json_decode($raw, true);
         if ($code >= 400) {
+            // Fallback to legacy response_format if this server doesn't support text.format
             $msg = $resp['error']['message'] ?? substr($raw, 0, 400);
-            throw new RuntimeException('API error (' . $code . '): ' . $msg);
+            $unsupportedText = is_string($msg) && (stripos($msg, 'Unsupported parameter') !== false || stripos($msg, 'text.format') !== false);
+            if ($unsupportedText) {
+                $payloadFallback = [
+                    'model' => $this->model,
+                    'input' => $msgs,
+                    'temperature' => $temperature,
+                    'response_format' => $jsonFormat,
+                ];
+                $ch = curl_init($url);
+                curl_setopt_array($ch, [
+                    CURLOPT_POST => true,
+                    CURLOPT_HTTPHEADER => [
+                        'Content-Type: application/json',
+                        'Authorization: Bearer ' . $this->apiKey,
+                    ],
+                    CURLOPT_POSTFIELDS => json_encode($payloadFallback),
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 30,
+                ]);
+                $raw2 = curl_exec($ch);
+                if ($raw2 === false) {
+                    $err = curl_error($ch);
+                    curl_close($ch);
+                    throw new RuntimeException('cURL error: ' . $err);
+                }
+                $code2 = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                $resp = json_decode($raw2, true);
+                if ($code2 >= 400) {
+                    $msg2 = $resp['error']['message'] ?? substr($raw2, 0, 400);
+                    throw new RuntimeException('API error (' . $code2 . '): ' . $msg2);
+                }
+            } else {
+                throw new RuntimeException('API error (' . $code . '): ' . $msg);
+            }
         }
 
         // Try to extract model JSON output
         $jsonText = $resp['output'][0]['content'][0]['text']
             ?? $resp['output_text']
-            ?? null;
+            ?? ($resp['output'][0]['text'] ?? null);
 
         if (!$jsonText) {
             throw new RuntimeException('Unexpected API response: ' . substr($raw, 0, 400));
@@ -198,4 +236,3 @@ class ValueEstimators
         return $ai->callJson($system, $user, $schema);
     }
 }
-
