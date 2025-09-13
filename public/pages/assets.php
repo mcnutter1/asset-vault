@@ -22,11 +22,30 @@ if (($_POST['action'] ?? '') === 'gen_token') {
 }
 
 // Fetch assets tree
-$assets = $pdo->query('SELECT a.id, a.name, a.parent_id, a.public_token, ac.name AS category, al.name AS locname FROM assets a 
-  LEFT JOIN asset_categories ac ON ac.id=a.category_id 
-  LEFT JOIN asset_locations al ON al.id=a.asset_location_id
-  WHERE a.is_deleted=0 
-  ORDER BY a.parent_id IS NOT NULL, a.parent_id, a.name')->fetchAll();
+// Detect optional asset_locations table and choose the safest query
+$hasAssetLocations = false;
+try {
+  $stmt = $pdo->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'asset_locations'");
+  $stmt->execute();
+  $hasAssetLocations = (bool)$stmt->fetchColumn();
+} catch (Throwable $e) { /* ignore and assume false */ }
+
+if ($hasAssetLocations) {
+  $sql = 'SELECT a.id, a.name, a.parent_id, a.public_token, ac.name AS category, al.name AS locname
+          FROM assets a
+          LEFT JOIN asset_categories ac ON ac.id=a.category_id
+          LEFT JOIN asset_locations al ON al.id=a.asset_location_id
+          WHERE a.is_deleted=0
+          ORDER BY a.parent_id IS NOT NULL, a.parent_id, a.name';
+} else {
+  // Fallback to free-text location column on assets if locations table not available
+  $sql = 'SELECT a.id, a.name, a.parent_id, a.public_token, ac.name AS category, a.location AS locname
+          FROM assets a
+          LEFT JOIN asset_categories ac ON ac.id=a.category_id
+          WHERE a.is_deleted=0
+          ORDER BY a.parent_id IS NOT NULL, a.parent_id, a.name';
+}
+$assets = $pdo->query($sql)->fetchAll();
 $byParent = [];
 foreach ($assets as $a) { $byParent[$a['parent_id'] ?? 0][] = $a; }
 

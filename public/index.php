@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../lib/Util.php';
 require_once __DIR__ . '/../lib/Database.php';
+// Start output buffering to avoid 'headers already sent' when pages echo before redirect
+if (ob_get_level() === 0) { ob_start(); }
 
 // Router
 $page = $_GET['page'] ?? 'dashboard';
@@ -30,7 +32,6 @@ switch ($page) {
     // Legacy route: redirect to settings coverages tab
     header('Location: ' . Util::baseUrl('index.php?page=settings&tab=coverages'));
     exit;
-    break;
   case 'settings':
     include __DIR__ . '/pages/settings.php';
     break;
@@ -39,3 +40,6 @@ switch ($page) {
 }
 
 include __DIR__ . '/../includes/footer.php';
+
+// Flush buffer
+if (ob_get_level() > 0) { ob_end_flush(); }
