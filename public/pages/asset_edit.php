@@ -275,6 +275,7 @@ if ($isEdit) {
       <div class="col-4"><label>Year</label><input type="number" min="1900" max="2100" name="year" value="<?= Util::h($asset['year']) ?>"></div>
       <?php if (in_array($catNameEarly, ['vehicle','car','truck','auto','suv'])): ?>
         <div class="col-4"><label>Odometer (miles)</label><input type="number" step="1" min="0" name="odometer_miles" value="<?= Util::h($asset['odometer_miles'] ?? '') ?>"></div>
+        <div class="col-4"><label>Hours Used</label><input type="number" step="1" min="0" name="hours_used" value="<?= Util::h($asset['hours_used'] ?? '') ?>"></div>
       <?php endif; ?>
       <?php if ($catNameEarly === 'boat'): ?>
         <div class="col-4"><label>Hours Used</label><input type="number" step="1" min="0" name="hours_used" value="<?= Util::h($asset['hours_used'] ?? '') ?>"></div>
