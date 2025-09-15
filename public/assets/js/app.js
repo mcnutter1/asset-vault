@@ -48,17 +48,22 @@ window.addEventListener('resize', ()=>{
   const toggle = qs('[data-nav-toggle]');
   const wrap = qs('#nav-wrap');
   if (toggle && wrap) {
-    toggle.addEventListener('click', (e)=>{
+  const doToggle = (e)=>{
       e.stopPropagation();
       const open = wrap.classList.toggle('open');
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
+  };
+  toggle.addEventListener('click', doToggle, { passive: true });
+  toggle.addEventListener('touchstart', doToggle, { passive: true });
     // Close on outside click (mobile)
     document.addEventListener('click', (e)=>{
       if (!wrap.classList.contains('open')) return;
       const within = wrap.contains(e.target) || toggle.contains(e.target);
       if (!within) { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); }
     });
+  // Prevent taps inside the menu from closing via outside handler on some browsers
+  wrap.addEventListener('click', (e)=>{ e.stopPropagation(); });
+  wrap.addEventListener('touchstart', (e)=>{ e.stopPropagation(); }, { passive: true });
     // Close when clicking a nav link
     qsa('.nav a', wrap).forEach(a=>{
       a.addEventListener('click', ()=>{
