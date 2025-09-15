@@ -110,7 +110,33 @@ class PropertyScraper
             $searchUrl = "https://www.zillow.com/homes/$q_rb/";
             $html = self::fetch($searchUrl);
             if ($html) {
-                if (preg_match('/https:\/\/www\.zillow\.com\/homedetails\/[A-Za-z0-9\-_,.%]+/i', $html, $m)) {
+                $candidates = [];
+                // Extract from JSON blobs: "detailUrl":"\/homedetails\/..."
+                if (preg_match_all('/\"detailUrl\"\s*:\s*\"(\\\/homedetails\\\/[^"]+)\"/i', $html, $mm)) {
+                    foreach ($mm[1] as $u) { $candidates[] = stripslashes($u); }
+                }
+                // Fallback: plain links
+                if (preg_match_all('/https:\\/\\/www\\.zillow\\.com\\/homedetails\\/[A-Za-z0-9\\-_,.%]+/i', addslashes($html), $mm2)) {
+                    foreach ($mm2[0] as $u) { $candidates[] = stripcslashes($u); }
+                }
+                $candidates = array_values(array_unique($candidates));
+                // Score candidates by address/city/zip
+                $wantedStreet = self::norm($house['address'] ?? '');
+                $wantedCity = self::norm($house['city'] ?? '');
+                $wantedZip = self::norm($house['zip'] ?? '');
+                $best = null; $bestScore = -1;
+                foreach ($candidates as $u) {
+                    $full = (strpos($u, 'http') === 0) ? $u : ('https://www.zillow.com' . $u);
+                    $n = self::norm($full);
+                    $score = 0;
+                    if ($wantedStreet && strpos($n, $wantedStreet) !== false) $score += 5;
+                    if ($wantedCity && strpos($n, $wantedCity) !== false) $score += 3;
+                    if ($wantedZip && strpos($n, $wantedZip) !== false) $score += 4;
+                    if ($score > $bestScore) { $best = $full; $bestScore = $score; }
+                }
+                if ($best) {
+                    $targetUrl = $best;
+                } elseif (preg_match('/https:\/\/www\.zillow\.com\/homedetails\/[A-Za-z0-9\-_,.%]+/i', $html, $m)) {
                     $targetUrl = html_entity_decode($m[0]);
                 }
             }

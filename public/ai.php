@@ -55,7 +55,7 @@ try {
           'baths' => null,
           'condition' => substr(trim(($asset['description'] ?? '') . ' ' . ($asset['notes'] ?? '')), 0, 200),
         ];
-        // Try to gather public facts from Zillow/Redfin to improve accuracy
+        // Try to gather public facts from Zillow to improve accuracy
         $facts = PropertyScraper::gather($house, [
           'zillow_url' => $_POST['zillow_url'] ?? null,
         ]);
