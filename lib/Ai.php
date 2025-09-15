@@ -95,7 +95,7 @@ class ValueEstimators
     /**
      * House valuation. Accepts available fields; optional fields may be omitted.
      */
-    public static function valueHouse(AiClient $ai, array $house, array $facts = []): array
+    public static function valueHouse(AiClient $ai, array $house): array
     {
         $schema = [
             'name' => 'HouseValuation',
@@ -124,14 +124,12 @@ class ValueEstimators
         $system = [
             "You are a property valuation assistant.",
             "Use the EXACT street address provided to estimate this specific property — do not use city-level averages.",
-            "Use platforms like Zillow and Realtor.com to pull the current values and details about the house.",
+            "Use platforms like Zillow and Realtor.com to pull the current values and details about the SPECIFIC property.",
             "Return both current MARKET VALUE from Zillow or Realtor and REPLACEMENT COST (rebuild cost) based on the sq foot of the house, bedrooms and bathrooms learned.",
                     ];
         $user = [
             'task' => 'value_house',
             'house' => $house,
-            'facts' => $facts,
-            'instructions' => 'Use the exact address. If reliable third-party facts are provided, rely on them and cite those sources in the response.'
         ];
         return $ai->callJson($system, $user, $schema);
     }
