@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS assets (
   model VARCHAR(100) NULL,
   serial_number VARCHAR(100) NULL,
   year SMALLINT NULL,
+  odometer_miles INT NULL,
+  hours_used INT NULL,
   purchase_date DATE NULL,
   notes TEXT NULL,
   location_id INT NULL,
@@ -89,6 +91,23 @@ CREATE TABLE IF NOT EXISTS asset_addresses (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_asset_addr (asset_id, address_type),
   CONSTRAINT fk_asset_addresses_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+);
+
+-- Reusable saved addresses (e.g., storage, mailing)
+CREATE TABLE IF NOT EXISTS saved_addresses (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  address_type ENUM('storage','mailing','other') NOT NULL DEFAULT 'storage',
+  line1 VARCHAR(200) NOT NULL,
+  line2 VARCHAR(200) NULL,
+  city VARCHAR(100) NOT NULL,
+  state VARCHAR(100) NULL,
+  postal_code VARCHAR(20) NULL,
+  country VARCHAR(100) NULL,
+  latitude DECIMAL(10,7) NULL,
+  longitude DECIMAL(10,7) NULL,
+  notes VARCHAR(255) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS asset_values (

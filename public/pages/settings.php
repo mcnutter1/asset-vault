@@ -32,6 +32,7 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
         <div class="group-title">Household</div>
         <a class="<?= $tab==='general'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=general') ?>">General</a>
         <a class="<?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
+        <a class="<?= $tab==='addresses'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=addresses') ?>">Addresses</a>
       </div>
     </nav>
   </aside>
@@ -75,6 +76,11 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
       <section class="settings-card">
         <h1>Coverage Settings</h1>
         <?php include __DIR__ . '/coverages.php'; ?>
+      </section>
+    <?php elseif ($tab==='addresses'): ?>
+      <section class="settings-card">
+        <h1>Saved Addresses</h1>
+        <?php include __DIR__ . '/saved_addresses.php'; ?>
       </section>
     <?php else: ?>
       <section class="settings-card"><h1>Unknown Settings</h1></section>
