@@ -88,12 +88,9 @@ try {
             ]
           ];
         } else {
-          // No facts found; optionally run AI or require URLs
-          $strict = isset($_POST['strict']) ? (int)$_POST['strict'] : 1;
-          if ($strict === 1) {
-            json_out(['ok'=>false,'error'=>'No authoritative facts found. Please paste the exact Zillow (and optionally Redfin) property URL.'], 200);
-          }
+          // No facts found; run AI estimation using exact address
           $result = ValueEstimators::valueHouse($ai, $house, $facts);
+          $result['notice'] = 'facts_missing';
         }
         json_out(['ok'=>true,'type'=>'house','data'=>$result]);
       } elseif (strpos($category, 'elect') !== false) {

@@ -379,6 +379,7 @@ if ($isEdit) {
           <div class="col-12"><label>Sources</label><input id="ai_sources" readonly></div>
         </div>
       </div>
+      <div id="aiNotice" class="small muted" style="display:none"></div>
       <div id="aiError" class="small muted" style="display:none;color:#dc2626"></div>
     </div>
     <div class="foot">
@@ -485,7 +486,7 @@ if ($isEdit) {
         var rurl = document.getElementById('ai_redfin_url').value || '';
         fetch('<?= Util::baseUrl('ai.php') ?>', {
           method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl, redfin_url: rurl, strict: '1' })
+          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl, redfin_url: rurl })
         }).then(r=>r.json()).then(data=>{
           if (!data.ok) throw new Error(data.error||'Failed');
           var val = data.data.valuation || {};
@@ -494,6 +495,11 @@ if ($isEdit) {
           document.getElementById('ai_confidence').value = val.confidence ?? '';
           document.getElementById('ai_assumptions').value = val.assumptions ?? '';
           document.getElementById('ai_sources').value = (val.sources||[]).join(', ');
+          if (data.data.notice === 'facts_missing') {
+            var n = document.getElementById('aiNotice');
+            n.textContent = 'No authoritative facts were found; showing AI estimation based on the exact address.';
+            n.style.display='block';
+          }
           loading.style.display='none'; result.style.display='block'; applyBtn.style.display='inline-flex';
           applyBtn.onclick = function(){
             var mv = document.getElementById('ai_market').value;
