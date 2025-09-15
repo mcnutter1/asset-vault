@@ -123,10 +123,10 @@ class ValueEstimators
 
         $system = [
             "You are a property valuation assistant.",
-            "Use the EXACT street address and ZIP provided to estimate this specific property — do not use city-level averages.",
-            "Return both current MARKET VALUE (comparable sales) and REPLACEMENT COST (rebuild cost) in USD.",
-            "If details like sq_ft/beds/baths are missing, infer reasonable estimates based on the address and typical comps; include them in the response.",
-        ];
+            "Use the EXACT street address provided to estimate this specific property — do not use city-level averages.",
+            "Use platforms like Zillow and Realtor.com to pull the current values and details about the house.",
+            "Return both current MARKET VALUE from Zillow or Realtor and REPLACEMENT COST (rebuild cost) based on the sq foot of the house, bedrooms and bathrooms learned.",
+                    ];
         $user = [
             'task' => 'value_house',
             'house' => $house,
