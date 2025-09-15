@@ -230,13 +230,7 @@ if ($policies) {
       </div>
       <?php if ($asset['description']): ?><div class="small" style="line-height:1.5; margin-top:6px; max-width:760px;"><?= nl2br(Util::h($asset['description'])) ?></div><?php endif; ?>
     </div>
-    <?php $contentsSum = $rootTotals['contents']; $totalVal = $rootTotals['total']; ?>
-    <div class="asset-stats">
-      <div class="asset-stat"><div class="label">Current Value</div><div class="value"><?= $currentValue!==null? '$'.number_format($currentValue,0) : '—' ?></div></div>
-      <div class="asset-stat"><div class="label">Replacement</div><div class="value"><?= $replaceValue!==null? '$'.number_format($replaceValue,0) : '—' ?></div></div>
-      <div class="asset-stat"><div class="label">Contents Sum</div><div class="value"><?= $contentsSum? '$'.number_format($contentsSum,0) : '—' ?></div></div>
-      <div class="asset-stat"><div class="label">Total Protected</div><div class="value"><?= $totalVal? '$'.number_format($totalVal,0) : '—' ?></div></div>
-    </div>
+  <?php $contentsSum = $rootTotals['contents']; $totalVal = $rootTotals['total']; ?>
     <div class="asset-attributes">
       <div class="asset-attr"><span class="attr-label">Make</span><span class="attr-value"><?= Util::h($asset['make']) ?: '—' ?></span></div>
       <div class="asset-attr"><span class="attr-label">Model</span><span class="attr-value"><?= Util::h($asset['model']) ?: '—' ?></span></div>
@@ -274,6 +268,14 @@ if ($policies) {
       </div>
     <?php endif; ?>
   </div>
+</div>
+
+<!-- Dashboard-style stat cards for values -->
+<div class="row" style="margin-top:16px">
+  <div class="col-3"><div class="card stat"><div class="stat-title">Current Value</div><div class="stat-value"><?= $currentValue!==null? '$'.number_format($currentValue,2) : '—' ?></div><div class="muted">Latest reported</div></div></div>
+  <div class="col-3"><div class="card stat"><div class="stat-title">Replacement</div><div class="stat-value"><?= $replaceValue!==null? '$'.number_format($replaceValue,2) : '—' ?></div><div class="muted">Latest replacement</div></div></div>
+  <div class="col-3"><div class="card stat"><div class="stat-title">Contents Sum</div><div class="stat-value"><?= $contentsSum? '$'.number_format($contentsSum,2) : '—' ?></div><div class="muted">Sum of nested items</div></div></div>
+  <div class="col-3"><div class="card stat"><div class="stat-title">Total Protected</div><div class="stat-value"><span><?= $totalVal? '$'.number_format($totalVal,2) : '—' ?></span></div><div class="muted">Self + contents</div></div></div>
 </div>
 
 <!-- Details & photos moved inside header card above -->
