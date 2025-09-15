@@ -8,6 +8,11 @@ if ($tab === 'general' && ($_POST['action'] ?? '') === 'save_general') {
   Util::checkCsrf();
   $key = trim($_POST['openai_api_key'] ?? '');
   Settings::set('openai_api_key', $key !== '' ? $key : null);
+  $model = trim($_POST['openai_model'] ?? '');
+  Settings::set('openai_model', $model !== '' ? $model : 'gpt-4.1');
+  $rebuild = trim($_POST['rebuild_cost_per_sqft'] ?? '350');
+  if ($rebuild === '' || !is_numeric($rebuild)) { $rebuild = '350'; }
+  Settings::set('rebuild_cost_per_sqft', $rebuild);
   echo '<div class="card"><div class="small">General settings saved.</div></div>';
 }
 
@@ -15,6 +20,8 @@ if ($tab === 'general' && ($_POST['action'] ?? '') === 'save_general') {
 $dbKey = Settings::get('openai_api_key');
 $cfgKey = (Util::config()['openai']['api_key'] ?? '');
 $prefillKey = $dbKey !== null ? $dbKey : $cfgKey;
+$prefillModel = Settings::get('openai_model', 'gpt-4.1');
+$prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
 ?>
 
 <div class="settings-wrap">
@@ -42,6 +49,20 @@ $prefillKey = $dbKey !== null ? $dbKey : $cfgKey;
               <label for="openai_api_key">OpenAI API Key</label>
               <input id="openai_api_key" name="openai_api_key" type="password" value="<?= Util::h($prefillKey) ?>" placeholder="sk-...">
               <div class="small muted">Stored securely in the database (app_settings). Overrides any key in config.</div>
+            </div>
+            <div class="col-6">
+              <label for="openai_model">OpenAI Model</label>
+              <?php $models = ['gpt-4.1','gpt-4.1-mini','gpt-4o','gpt-4o-mini']; ?>
+              <select id="openai_model" name="openai_model">
+                <?php foreach ($models as $m): ?>
+                  <option value="<?= $m ?>" <?= $prefillModel===$m?'selected':'' ?>><?= $m ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-6">
+              <label for="rebuild_cost_per_sqft">Default Rebuild Cost ($/sq ft)</label>
+              <input id="rebuild_cost_per_sqft" name="rebuild_cost_per_sqft" type="number" step="1" min="50" max="1500" value="<?= Util::h($prefillRebuild) ?>">
+              <div class="small muted">Used when square footage is known but rebuild cost isn’t.</div>
             </div>
             <div class="col-12">
               <hr class="divider" />

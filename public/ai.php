@@ -28,7 +28,8 @@ try {
   if ($action === 'estimate') {
     try {
       $aiKey = Settings::get('openai_api_key', Util::config()['openai']['api_key'] ?? null);
-      $ai = new AiClient($aiKey);
+      $model = Settings::get('openai_model', 'gpt-4.1');
+      $ai = new AiClient($aiKey, $model);
       $category = strtolower($asset['category_name'] ?? '');
 
       if (strpos($category, 'home') !== false || strpos($category, 'house') !== false || $category === 'home' || strpos($category, 'property') !== false) {
@@ -69,9 +70,9 @@ try {
 
         if ($market !== null) {
           $repl = null; $assump = [];
+          $rate = (float)Settings::get('rebuild_cost_per_sqft', '350');
           if (!empty($facts['sq_ft'])) {
             // Use a conservative high-quality rebuild rate; user can adjust later
-            $rate = 350; // USD per sq ft (tunable)
             $repl = round($facts['sq_ft'] * $rate, 2);
             $assump[] = "Replacement cost uses $rate USD/sqft x ".$facts['sq_ft']." sqft.";
           } else {
