@@ -104,7 +104,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: upp
 .modal .head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .modal .body { padding: 16px; }
 .modal .foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
-.modal.show { display: flex; }
+.modal-backdrop.show { display: flex; }
 
 .spinner { width: 24px; height: 24px; border-radius: 50%; border: 3px solid #e5e7eb; border-top-color: var(--primary); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
