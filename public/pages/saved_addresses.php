@@ -32,7 +32,7 @@ $addrs = $pdo->query('SELECT * FROM saved_addresses ORDER BY name')->fetchAll();
 ?>
 
 <div class="row">
-  <div class="col-7">
+  <div class="col-12">
     <h2>Address Book</h2>
     <table>
       <thead><tr><th>Name</th><th>Type</th><th>Address</th><th></th></tr></thead>
@@ -55,7 +55,9 @@ $addrs = $pdo->query('SELECT * FROM saved_addresses ORDER BY name')->fetchAll();
       </tbody>
     </table>
   </div>
-  <div class="col-5">
+
+  <div class="col-12">
+    <hr class="divider" />
     <h2>Add Address</h2>
     <form method="post" class="row">
       <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
@@ -81,4 +83,3 @@ $addrs = $pdo->query('SELECT * FROM saved_addresses ORDER BY name')->fetchAll();
     </form>
   </div>
 </div>
-

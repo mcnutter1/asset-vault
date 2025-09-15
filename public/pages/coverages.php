@@ -27,12 +27,9 @@ if (($_POST['action'] ?? '') === 'remove') {
 
 $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAll();
 ?>
-<div class="settings-card">
-  <h1>Coverages</h1>
-  <div class="row">
-    <div class="col-7">
-      <h2>Coverage Library</h2>
-      <table>
+<div>
+  <h2>Coverage Library</h2>
+  <table>
         <thead><tr><th>Code</th><th>Name</th><th>Types</th><th></th></tr></thead>
         <tbody>
           <?php foreach ($rows as $r): ?>
@@ -51,29 +48,27 @@ $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAl
           </tr>
           <?php endforeach; ?>
         </tbody>
-      </table>
-    </div>
-    <div class="col-5">
-      <h2>Add Coverage</h2>
-      <form method="post">
-        <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-        <input type="hidden" name="action" value="add">
-        <div class="row">
-          <div class="col-6"><label>Code</label><input name="code" required></div>
-          <div class="col-6"><label>Name</label><input name="name" required></div>
-          <div class="col-12"><label>Description</label><input name="description"></div>
-          <div class="col-12">
-            <label>Applicable Types</label>
-            <?php $types=['home','auto','boat','flood','umbrella','jewelry','electronics','other']; ?>
-            <div class="list">
-              <?php foreach ($types as $t): ?>
-                <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="types[]" value="<?= $t ?>"> <?= ucfirst($t) ?></label>
-              <?php endforeach; ?>
-            </div>
-          </div>
-          <div class="col-12 actions"><button class="btn" type="submit">Add</button></div>
+  </table>
+
+  <hr class="divider" />
+  <h2>Add Coverage</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+    <input type="hidden" name="action" value="add">
+    <div class="row">
+      <div class="col-6"><label>Code</label><input name="code" required></div>
+      <div class="col-6"><label>Name</label><input name="name" required></div>
+      <div class="col-12"><label>Description</label><input name="description"></div>
+      <div class="col-12">
+        <label>Applicable Types</label>
+        <?php $types=['home','auto','boat','flood','umbrella','jewelry','electronics','other']; ?>
+        <div class="list">
+          <?php foreach ($types as $t): ?>
+            <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="types[]" value="<?= $t ?>"> <?= ucfirst($t) ?></label>
+          <?php endforeach; ?>
         </div>
-      </form>
+      </div>
+      <div class="col-12 actions"><button class="btn" type="submit">Add</button></div>
     </div>
-  </div>
+  </form>
 </div>
