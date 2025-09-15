@@ -15,7 +15,7 @@ if (($_POST['action'] ?? '') === 'save') {
   $category_id = $_POST['category_id'] ? (int)$_POST['category_id'] : null;
   $parent_id = $_POST['parent_id'] ? (int)$_POST['parent_id'] : null;
   $description = trim($_POST['description'] ?? '');
-  $location = trim($_POST['location'] ?? '');
+  $location = ''; // deprecated free-text location removed from UI
   $make = trim($_POST['make'] ?? '');
   $model = trim($_POST['model'] ?? '');
   $serial_number = trim($_POST['serial_number'] ?? '');
@@ -266,7 +266,7 @@ if ($isEdit) {
         <label>Description</label>
         <textarea name="description" rows="3"><?= Util::h($asset['description']) ?></textarea>
       </div>
-      <div class="col-4"><label>Location (Free Text)</label><input name="location" value="<?= Util::h($asset['location']) ?>"></div>
+      
       <div class="col-4"><label>Make</label><input name="make" value="<?= Util::h($asset['make']) ?>"></div>
       <div class="col-4"><label>Model</label><input name="model" value="<?= Util::h($asset['model']) ?>"></div>
       <div class="col-4"><label>Serial #</label><input name="serial_number" value="<?= Util::h($asset['serial_number']) ?>"></div>
@@ -292,12 +292,26 @@ if ($isEdit) {
         <div class="col-12">
           <h2><?= ucfirst($addrType) ?> Address</h2>
         </div>
-        <div class="col-6"><label>Address Line 1</label><input name="addr_line1" value="<?= Util::h($addr['line1'] ?? '') ?>"></div>
-        <div class="col-6"><label>Address Line 2</label><input name="addr_line2" value="<?= Util::h($addr['line2'] ?? '') ?>"></div>
-        <div class="col-4"><label>City</label><input name="addr_city" value="<?= Util::h($addr['city'] ?? '') ?>"></div>
-        <div class="col-4"><label>State</label><input name="addr_state" value="<?= Util::h($addr['state'] ?? '') ?>"></div>
-        <div class="col-4"><label>Postal Code</label><input name="addr_postal" value="<?= Util::h($addr['postal_code'] ?? '') ?>"></div>
-        <div class="col-4"><label>Country</label><input name="addr_country" value="<?= Util::h($addr['country'] ?? '') ?>"></div>
+        <?php if (in_array($catName, ['home','house','property'])): ?>
+          <div class="col-6"><label>Address Line 1</label><input name="addr_line1" value="<?= Util::h($addr['line1'] ?? '') ?>"></div>
+          <div class="col-6"><label>Address Line 2</label><input name="addr_line2" value="<?= Util::h($addr['line2'] ?? '') ?>"></div>
+          <div class="col-4"><label>City</label><input name="addr_city" value="<?= Util::h($addr['city'] ?? '') ?>"></div>
+          <div class="col-4"><label>State</label><input name="addr_state" value="<?= Util::h($addr['state'] ?? '') ?>"></div>
+          <div class="col-4"><label>Postal Code</label><input name="addr_postal" value="<?= Util::h($addr['postal_code'] ?? '') ?>"></div>
+          <div class="col-4"><label>Country</label><input name="addr_country" value="<?= Util::h($addr['country'] ?? '') ?>"></div>
+        <?php else: ?>
+          <?php $savedAddrs = $pdo->query('SELECT * FROM saved_addresses ORDER BY name')->fetchAll(); ?>
+          <div class="col-12">
+            <label>Select Saved Address</label>
+            <select id="saved_address_id" name="saved_address_id">
+              <option value="">--</option>
+              <?php foreach ($savedAddrs as $sa): ?>
+                <option value="<?= (int)$sa['id'] ?>"><?= Util::h($sa['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <div class="small muted">Storage addresses must be selected from saved addresses (Settings → Addresses).</div>
+          </div>
+        <?php endif; ?>
       <?php endif; ?>
 
       <div class="col-12 section-head">
