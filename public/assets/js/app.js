@@ -44,39 +44,41 @@ window.addEventListener('resize', ()=>{
     const json = c.getAttribute('data-series');
     if (json) drawLineChart(c, JSON.parse(json));
   });
-  // Mobile nav toggle
-  const toggle = qs('[data-nav-toggle]');
-  const wrap = qs('#nav-wrap');
-  if (toggle && wrap) {
-    let lastClick = 0;
-    toggle.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      const now = Date.now();
-      if (now - lastClick < 250) return; // debounce double-fire on touch
-      lastClick = now;
-      const open = wrap.classList.toggle('open');
-      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-    // Close on outside click (mobile)
-    document.addEventListener('click', (e)=>{
-      if (!wrap.classList.contains('open')) return;
-      const within = wrap.contains(e.target) || toggle.contains(e.target);
-      if (!within) { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); }
-    });
-  // Prevent taps inside the menu from closing via outside handler on some browsers
-  wrap.addEventListener('click', (e)=>{ e.stopPropagation(); });
-  // No touchstart toggle; rely on click to avoid double toggling
-    // Close when clicking a nav link
-    qsa('.nav a', wrap).forEach(a=>{
-      a.addEventListener('click', ()=>{
-        wrap.classList.remove('open');
-        toggle.setAttribute('aria-expanded','false');
-      });
-    });
-  }
 });
 
-window.addEventListener('DOMContentLoaded', ()=>{
+function initNavToggle(){
+  const toggle = qs('[data-nav-toggle]');
+  const wrap = qs('#nav-wrap');
+  if (!(toggle && wrap)) return;
+  if (wrap.dataset.inited === '1') return; // idempotent
+  wrap.dataset.inited = '1';
+  let lastClick = 0;
+  toggle.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const now = Date.now();
+    if (now - lastClick < 250) return; // debounce double-fire on touch
+    lastClick = now;
+    const open = wrap.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  // Close on outside click (mobile)
+  document.addEventListener('click', (e)=>{
+    if (!wrap.classList.contains('open')) return;
+    const within = wrap.contains(e.target) || toggle.contains(e.target);
+    if (!within) { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); }
+  });
+  // Prevent taps inside the menu from closing via outside handler on some browsers
+  wrap.addEventListener('click', (e)=>{ e.stopPropagation(); });
+  // Close when clicking a nav link
+  qsa('.nav a', wrap).forEach(a=>{
+    a.addEventListener('click', ()=>{
+      wrap.classList.remove('open');
+      toggle.setAttribute('aria-expanded','false');
+    });
+  });
+}
+
+function initDOM(){
   qsa('canvas[data-autodraw]').forEach(c=>{
     const json = c.getAttribute('data-series');
     if (json) drawLineChart(c, JSON.parse(json));
@@ -95,4 +97,11 @@ window.addEventListener('DOMContentLoaded', ()=>{
       if (el) el.classList.remove('show');
     });
   });
-});
+  initNavToggle();
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', initDOM);
+} else {
+  initDOM();
+}

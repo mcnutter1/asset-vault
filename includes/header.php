@@ -18,7 +18,7 @@ $page = $_GET['page'] ?? 'dashboard';
   <div class="app-bar">
     <div class="inner">
       <div class="brand">Asset Vault</div>
-      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" data-nav-toggle>
+  <button class="nav-toggle" type="button" aria-label="Toggle menu" aria-expanded="false" data-nav-toggle>
         <span></span><span></span><span></span>
       </button>
       <div class="nav-wrap" id="nav-wrap">
