@@ -25,15 +25,15 @@ if (($_POST['action'] ?? '') === 'save') {
 
   if ($isEdit) {
     $asset_location_id = isset($_POST['asset_location_id']) && $_POST['asset_location_id']!=='' ? (int)$_POST['asset_location_id'] : null;
-    $stmt = $pdo->prepare('UPDATE assets SET name=?, category_id=?, parent_id=?, description=?, location=?, make=?, model=?, serial_number=?, year=?, purchase_date=?, notes=?, asset_location_id=? WHERE id=?');
-    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $asset_location_id, $id]);
+    $stmt = $pdo->prepare('UPDATE assets SET name=?, category_id=?, parent_id=?, description=?, location=?, make=?, model=?, serial_number=?, year=?, odometer_miles=?, hours_used=?, purchase_date=?, notes=?, asset_location_id=? WHERE id=?');
+    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $odometer_miles, $hours_used, $purchase_date, $notes, $asset_location_id, $id]);
     $pdo->prepare('INSERT INTO audit_log(entity_type, entity_id, action, details) VALUES ("asset", ?, "update", NULL)')->execute([$id]);
   } else {
     $asset_location_id = isset($_POST['asset_location_id']) && $_POST['asset_location_id']!=='' ? (int)$_POST['asset_location_id'] : null;
     // generate public token
     $token = bin2hex(random_bytes(12));
-    $stmt = $pdo->prepare('INSERT INTO assets(name, category_id, parent_id, description, location, make, model, serial_number, year, purchase_date, notes, asset_location_id, public_token) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
-    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $purchase_date, $notes, $asset_location_id, $token]);
+    $stmt = $pdo->prepare('INSERT INTO assets(name, category_id, parent_id, description, location, make, model, serial_number, year, odometer_miles, hours_used, purchase_date, notes, asset_location_id, public_token) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $stmt->execute([$name, $category_id, $parent_id, $description, $location, $make, $model, $serial_number, $year, $odometer_miles, $hours_used, $purchase_date, $notes, $asset_location_id, $token]);
     $id = (int)$pdo->lastInsertId();
     $pdo->prepare('INSERT INTO audit_log(entity_type, entity_id, action, details) VALUES ("asset", ?, "create", NULL)')->execute([$id]);
     $isEdit = true;
@@ -221,6 +221,8 @@ if ($isEdit) {
     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
     <input type="hidden" name="action" value="save">
   <div class="row">
+      <?php // Determine category early for conditional fields ?>
+      <?php $catNameEarly = ''; if (!empty($asset['category_id'])) { foreach ($cats as $c) if ($c['id']==$asset['category_id']) { $catNameEarly = strtolower($c['name']); break; } } ?>
       <div class="col-6">
         <label>Name</label>
         <input name="name" required value="<?= Util::h($asset['name']) ?>">
@@ -271,6 +273,12 @@ if ($isEdit) {
       <div class="col-4"><label>Model</label><input name="model" value="<?= Util::h($asset['model']) ?>"></div>
       <div class="col-4"><label>Serial #</label><input name="serial_number" value="<?= Util::h($asset['serial_number']) ?>"></div>
       <div class="col-4"><label>Year</label><input type="number" min="1900" max="2100" name="year" value="<?= Util::h($asset['year']) ?>"></div>
+      <?php if (in_array($catNameEarly, ['vehicle','car','truck','auto','suv'])): ?>
+        <div class="col-4"><label>Odometer (miles)</label><input type="number" step="1" min="0" name="odometer_miles" value="<?= Util::h($asset['odometer_miles'] ?? '') ?>"></div>
+      <?php endif; ?>
+      <?php if ($catNameEarly === 'boat'): ?>
+        <div class="col-4"><label>Hours Used</label><input type="number" step="1" min="0" name="hours_used" value="<?= Util::h($asset['hours_used'] ?? '') ?>"></div>
+      <?php endif; ?>
       <div class="col-4"><label>Purchase Date</label><input type="date" name="purchase_date" value="<?= Util::h($asset['purchase_date']) ?>"></div>
       <div class="col-12"><label>Notes</label><textarea name="notes" rows="2"><?= Util::h($asset['notes']) ?></textarea></div>
 
@@ -343,7 +351,8 @@ if ($isEdit) {
         </div>
       </div>
       <?php if ($values): ?>
-          <div class="small" style="margin-top:8px">History (most recent last):</div>
+        <div class="col-12">
+          <div class="small" style="margin-top:8px">History (most recent last)</div>
           <table>
             <thead><tr><th>Type</th><th>Amount</th><th>Date</th></tr></thead>
             <tbody>
@@ -352,12 +361,15 @@ if ($isEdit) {
               <?php endforeach; ?>
             </tbody>
           </table>
-          <?php if (!empty($seriesCurrent)): ?>
+        </div>
+        <?php if (!empty($seriesCurrent)): ?>
+          <div class="col-12">
             <div class="small" style="margin-top:8px">Current Value Trend</div>
             <div style="width:100%;height:160px">
               <canvas data-autodraw data-series='<?= Util::h(json_encode($seriesCurrent)) ?>' style="width:100%;height:160px"></canvas>
             </div>
-          <?php endif; ?>
+          </div>
+        <?php endif; ?>
       <?php endif; ?>
 
       <div class="col-12">
