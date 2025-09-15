@@ -6,7 +6,7 @@ class AiClient
     private string $baseUrl;
     private string $model;
 
-    public function __construct(?string $apiKey = null, string $model = 'gpt-4.1-mini', string $baseUrl = 'https://api.openai.com/v1')
+    public function __construct(?string $apiKey = null, string $model = 'gpt-4.1', string $baseUrl = 'https://api.openai.com/v1')
     {
         $apiKey = $apiKey ?? getenv('OPENAI_API_KEY') ?: '';
         if (!$apiKey) {

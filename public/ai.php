@@ -55,8 +55,46 @@ try {
           'condition' => substr(trim(($asset['description'] ?? '') . ' ' . ($asset['notes'] ?? '')), 0, 200),
         ];
         // Try to gather public facts from Zillow/Redfin to improve accuracy
-        $facts = PropertyScraper::gather($house);
-        $result = ValueEstimators::valueHouse($ai, $house, $facts);
+        $facts = PropertyScraper::gather($house, [
+          'zillow_url' => $_POST['zillow_url'] ?? null,
+          'redfin_url' => $_POST['redfin_url'] ?? null,
+        ]);
+
+        // If we have authoritative market value, prefer it (facts-first). Avoid AI guessing.
+        $market = null; $sourceUrls = [];
+        if (!empty($facts['zestimate_usd'])) { $market = (float)$facts['zestimate_usd']; }
+        elseif (!empty($facts['redfin_estimate_usd'])) { $market = (float)$facts['redfin_estimate_usd']; }
+        if (!empty($facts['zillow_url'])) $sourceUrls[] = $facts['zillow_url'];
+        if (!empty($facts['redfin_url'])) $sourceUrls[] = $facts['redfin_url'];
+
+        if ($market !== null) {
+          $repl = null; $assump = [];
+          if (!empty($facts['sq_ft'])) {
+            // Use a conservative high-quality rebuild rate; user can adjust later
+            $rate = 350; // USD per sq ft (tunable)
+            $repl = round($facts['sq_ft'] * $rate, 2);
+            $assump[] = "Replacement cost uses $rate USD/sqft x ".$facts['sq_ft']." sqft.";
+          } else {
+            $assump[] = 'Replacement cost pending sqft; please verify size or enter manually.';
+          }
+          $assump[] = 'Market value from public sources (Zillow/Redfin).';
+          $result = [
+            'valuation' => [
+              'market_value_usd' => $market,
+              'replacement_cost_usd' => $repl,
+              'assumptions' => implode(' ', $assump),
+              'confidence' => 'high',
+              'sources' => $sourceUrls,
+            ]
+          ];
+        } else {
+          // No facts found; optionally run AI or require URLs
+          $strict = isset($_POST['strict']) ? (int)$_POST['strict'] : 1;
+          if ($strict === 1) {
+            json_out(['ok'=>false,'error'=>'No authoritative facts found. Please paste the exact Zillow (and optionally Redfin) property URL.'], 200);
+          }
+          $result = ValueEstimators::valueHouse($ai, $house, $facts);
+        }
         json_out(['ok'=>true,'type'=>'house','data'=>$result]);
       } elseif (strpos($category, 'elect') !== false) {
         // Electronics: build device payload

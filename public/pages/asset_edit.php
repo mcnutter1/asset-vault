@@ -485,7 +485,7 @@ if ($isEdit) {
         var rurl = document.getElementById('ai_redfin_url').value || '';
         fetch('<?= Util::baseUrl('ai.php') ?>', {
           method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl, redfin_url: rurl })
+          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl, redfin_url: rurl, strict: '1' })
         }).then(r=>r.json()).then(data=>{
           if (!data.ok) throw new Error(data.error||'Failed');
           var val = data.data.valuation || {};
