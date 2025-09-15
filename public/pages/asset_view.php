@@ -92,6 +92,8 @@ function pv_flatten($parentId, $byParent, $depth, &$flat){
   }
 }
 pv_flatten((int)$asset['id'], $byParent, 0, $flat);
+// Ensure totals include the root asset so contents sum is available
+$rootTotals = pv_totalsFor((int)$asset['id'], $byParent, $replaceSelfValue, $memoTotals);
 
 // Policy inheritance / coverage for contents
 // Preload policy_assets for all assets (for simple inheritance: parent policies with applies_to_children=1)
@@ -213,9 +215,9 @@ if ($policies) {
 
 ?>
 <div class="card asset-header">
-  <div class="asset-primary">
-    <div>
-      <div class="header-title" style="margin:0 0 4px; font-size:26px; font-weight:800; letter-spacing:.3px;">
+  <div class="asset-primary" style="gap:16px;">
+    <div class="top-block">
+      <div class="header-title" style="margin:0 0 2px; font-size:26px; font-weight:800; letter-spacing:.3px;">
         <?= Util::h($asset['name']) ?>
       </div>
       <div class="asset-tags">
@@ -226,22 +228,24 @@ if ($policies) {
           <?php $pCount = count($primaryPolicyChosen); ?><span class="pill primary">Policies: <?= $pCount ?></span>
         <?php endif; ?>
       </div>
+      <?php if ($asset['description']): ?><div class="small" style="line-height:1.5; margin-top:6px; max-width:760px;"><?= nl2br(Util::h($asset['description'])) ?></div><?php endif; ?>
     </div>
-    <?php if ($asset['description']): ?><div class="small" style="line-height:1.5; margin-top:4px; max-width:680px;"><?= nl2br(Util::h($asset['description'])) ?></div><?php endif; ?>
+    <?php $contentsSum = $rootTotals['contents']; $totalVal = $rootTotals['total']; ?>
     <div class="asset-stats">
       <div class="asset-stat"><div class="label">Current Value</div><div class="value"><?= $currentValue!==null? '$'.number_format($currentValue,0) : '—' ?></div></div>
       <div class="asset-stat"><div class="label">Replacement</div><div class="value"><?= $replaceValue!==null? '$'.number_format($replaceValue,0) : '—' ?></div></div>
-      <?php $contentsSum = $memoTotals[$asset['id']]['contents'] ?? 0.0; ?>
       <div class="asset-stat"><div class="label">Contents Sum</div><div class="value"><?= $contentsSum? '$'.number_format($contentsSum,0) : '—' ?></div></div>
-      <?php $totalVal = $memoTotals[$asset['id']]['total'] ?? (($replaceValue ?? 0)+($contentsSum ?? 0)); ?>
       <div class="asset-stat"><div class="label">Total Protected</div><div class="value"><?= $totalVal? '$'.number_format($totalVal,0) : '—' ?></div></div>
     </div>
-  </div>
-  <div>
+    <div class="details" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); margin-top:4px;">
+      <div class="asset-stat" style="background:#fff;"><div class="label">Make</div><div class="value" style="font-size:16px; font-weight:600;"><?= Util::h($asset['make']) ?: '—' ?></div></div>
+      <div class="asset-stat" style="background:#fff;"><div class="label">Model</div><div class="value" style="font-size:16px; font-weight:600;"><?= Util::h($asset['model']) ?: '—' ?></div></div>
+      <div class="asset-stat" style="background:#fff;"><div class="label">Year</div><div class="value" style="font-size:16px; font-weight:600;"><?= Util::h($asset['year']) ?: '—' ?></div></div>
+    </div>
     <?php if ($policies): ?>
-      <div class="policy-fields compact">
+      <div class="policy-fields compact" style="margin-top:8px;">
         <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; ?>
-          <div class="policy-field-row" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">
+          <div class="policy-field-row" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); background:#FAF9F8;">
             <div><strong>#</strong><?= Util::h($pol['policy_number']) ?></div>
             <div><strong>Insurer</strong><?= Util::h($pol['insurer']) ?></div>
             <div><strong>Type</strong><?= Util::h($pol['policy_type']) ?></div>
@@ -251,26 +255,22 @@ if ($policies) {
         <?php endforeach; ?>
       </div>
     <?php else: ?>
-      <div class="small muted" style="text-align:right">No policies linked.</div>
+      <div class="small muted" style="margin-top:4px;">No policies linked.</div>
+    <?php endif; ?>
+    <?php if ($photos): ?>
+      <div class="mini-gallery" style="margin-top:12px;">
+        <div class="small muted" style="margin:0 0 6px; font-weight:600;letter-spacing:.5px;text-transform:uppercase;">Photos</div>
+        <div class="gallery" style="margin-top:0; grid-template-columns:repeat(auto-fit,minmax(90px,1fr));">
+          <?php foreach ($photos as $ph): ?>
+            <img src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
+          <?php endforeach; ?>
+        </div>
+      </div>
     <?php endif; ?>
   </div>
 </div>
 
-  <div class="row" style="margin-top:10px">
-    <div class="col-4"><label>Make</label><div><?= Util::h($asset['make']) ?: '—' ?></div></div>
-    <div class="col-4"><label>Model</label><div><?= Util::h($asset['model']) ?: '—' ?></div></div>
-    <div class="col-4"><label>Year</label><div><?= Util::h($asset['year']) ?: '—' ?></div></div>
-  </div>
-
-  <?php if ($photos): ?>
-    <h2>Photos</h2>
-    <div class="gallery" style="margin-top:8px">
-      <?php foreach ($photos as $ph): ?>
-        <img src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
-      <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
-</div>
+<!-- Details & photos moved inside header card above -->
 
 <?php if ($flat): ?>
 <div class="card" style="margin-top:16px">
