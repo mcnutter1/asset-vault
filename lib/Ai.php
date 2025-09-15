@@ -95,7 +95,7 @@ class ValueEstimators
     /**
      * House valuation. Accepts available fields; optional fields may be omitted.
      */
-    public static function valueHouse(AiClient $ai, array $house): array
+    public static function valueHouse(AiClient $ai, array $house, array $facts = []): array
     {
         $schema = [
             'name' => 'HouseValuation',
@@ -130,6 +130,8 @@ class ValueEstimators
         $user = [
             'task' => 'value_house',
             'house' => $house,
+            'facts' => $facts,
+            'instructions' => 'Use the exact address. If reliable third-party facts are provided, rely on them and cite those sources in the response.'
         ];
         return $ai->callJson($system, $user, $schema);
     }

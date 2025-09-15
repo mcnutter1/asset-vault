@@ -3,6 +3,7 @@ require_once __DIR__ . '/../lib/Database.php';
 require_once __DIR__ . '/../lib/Util.php';
 require_once __DIR__ . '/../lib/Ai.php';
 require_once __DIR__ . '/../lib/Settings.php';
+require_once __DIR__ . '/../lib/PropertyScraper.php';
 
 header('Content-Type: application/json');
 
@@ -53,7 +54,9 @@ try {
           'baths' => null,
           'condition' => substr(trim(($asset['description'] ?? '') . ' ' . ($asset['notes'] ?? '')), 0, 200),
         ];
-        $result = ValueEstimators::valueHouse($ai, $house);
+        // Try to gather public facts from Zillow/Redfin to improve accuracy
+        $facts = PropertyScraper::gather($house);
+        $result = ValueEstimators::valueHouse($ai, $house, $facts);
         json_out(['ok'=>true,'type'=>'house','data'=>$result]);
       } elseif (strpos($category, 'elect') !== false) {
         // Electronics: build device payload
