@@ -173,6 +173,44 @@ if ($policies && $primaryCategoryKeys) {
   }
 }
 
+// Build quick lookup: coverageByPolicy[policy_id][code] = coverage row
+$coverageByPolicy = [];
+foreach ($policyCoverages as $pid => $covList) {
+  foreach ($covList as $row) { $coverageByPolicy[$pid][$row['code']] = $row; }
+}
+
+// Determine single primary coverage code per category (priority order)
+function pv_primary_coverage_candidates(string $catName): array {
+  $c = strtolower($catName);
+  return match($c) {
+    'home','house','property','residence' => ['dwelling'],
+    'electronics' => ['scheduled_property','personal_property'],
+    'jewelry','jewelery' => ['scheduled_property'],
+    'appliances','furniture' => ['personal_property'],
+    'vehicle','car','truck','auto' => ['collision','comprehensive'],
+    'boat' => ['boat_hull','boat_equipment'],
+    default => ['scheduled_property','personal_property']
+  };
+}
+
+// Helper to choose coverage row for a given policy and category
+function pv_choose_coverage_for_policy(array $policy, string $categoryName, array $coverageByPolicy): ?array {
+  $pid = (int)$policy['id'];
+  if (empty($coverageByPolicy[$pid])) return null;
+  foreach (pv_primary_coverage_candidates($categoryName) as $cand) {
+    if (isset($coverageByPolicy[$pid][$cand])) return $coverageByPolicy[$pid][$cand];
+  }
+  return null;
+}
+
+// Header: compute chosen coverage per direct policy for the primary asset
+$primaryPolicyChosen = [];
+if ($policies) {
+  foreach ($policies as $p) {
+    $primaryPolicyChosen[(int)$p['id']] = pv_choose_coverage_for_policy($p, (string)$asset['category_name'], $coverageByPolicy);
+  }
+}
+
 ?>
 <div class="card">
   <div class="header-card">
@@ -193,12 +231,12 @@ if ($policies && $primaryCategoryKeys) {
           .policy-field-row div strong { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color: var(--muted); margin-bottom:2px; }
         </style>
         <div class="policy-fields">
-          <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $covCodes = $primaryPolicyCoverageCodes[$pid] ?? []; ?>
+      <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; ?>
             <div class="policy-field-row">
               <div><strong>Policy #</strong><?= Util::h($pol['policy_number']) ?></div>
-              <div><strong>Insurer</strong><?= Util::h($pol['insurer']) ?></div>
-              <div><strong>Type</strong><?= Util::h($pol['policy_type']) ?></div>
-              <div><strong>Coverages</strong><?= $covCodes ? Util::h(implode(', ', array_slice($covCodes,0,6))) : '—' ?></div>
+        <div><strong>Insurer</strong><?= Util::h($pol['insurer']) ?></div>
+        <div><strong>Type</strong><?= Util::h($pol['policy_type']) ?></div>
+        <div><strong>Primary Coverage</strong><?= $chosen ? Util::h($chosen['code']) : '—' ?><?= $chosen && $chosen['limit_amount']!==null ? ' ($'.number_format((float)$chosen['limit_amount'],0).')' : '' ?></div>
             </div>
           <?php endforeach; ?>
         </div>
@@ -230,24 +268,22 @@ if ($policies && $primaryCategoryKeys) {
     <thead><tr><th>Asset</th><th>Category</th><th>Location</th><th>Coverage</th><th>Replace</th><th>Contents</th><th>Total</th></tr></thead>
     <tbody>
       <?php foreach ($flat as $row): $t = pv_totalsFor($row['id'], $byParent, $replaceSelfValue, $memoTotals);
+        // Determine applicable policies (self + inherited) then select first coverage candidate available
         $appPols = pv_applicablePolicies($row['id'], $policiesByAsset, $parentMap);
-        $rowCategoryKeys = $row['category'] ? pv_category_keys($row['category']) : [];
-        $coverageCodes = [];
-        foreach ($appPols as $pid) {
-          foreach ($rowCategoryKeys as $ck) {
-            $ckLower = strtolower($ck);
-            if (!empty($policyCovFiltered[$pid][$ckLower])) {
-              foreach ($policyCovFiltered[$pid][$ckLower] as $cc) { $coverageCodes[$cc] = true; }
+        $chosenCoverageCode = '—';
+        foreach (pv_primary_coverage_candidates($row['category'] ?: '') as $cand) {
+          $found = false;
+            foreach ($appPols as $pid) {
+              if (!empty($coverageByPolicy[$pid][$cand])) { $chosenCoverageCode = $coverageByPolicy[$pid][$cand]['code']; $found = true; break; }
             }
-          }
+          if ($found) break;
         }
-        $coverageDisplay = $coverageCodes? implode(',', array_slice(array_keys($coverageCodes),0,5)) : '—';
       ?>
         <tr>
           <td><div style="padding-left: <?= (int)$row['depth']*16 ?>px"><?= Util::h($row['name']) ?></div></td>
           <td><?= Util::h($row['category']) ?></td>
           <td><?= $row['locname'] ? Util::h($row['locname']) : '-' ?></td>
-          <td><?= Util::h($coverageDisplay) ?></td>
+          <td><?= Util::h($chosenCoverageCode) ?></td>
           <td>$<?= number_format($t['self'], 2) ?></td>
           <td>$<?= number_format($t['contents'], 2) ?></td>
           <td><strong>$<?= number_format($t['total'], 2) ?></strong></td>
