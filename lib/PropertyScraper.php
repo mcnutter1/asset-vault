@@ -88,35 +88,10 @@ class PropertyScraper
         return $facts;
     }
 
-    public static function redfin(array $house, ?string $directUrl = null): array
-    {
-        $facts = [];
-        $url = $directUrl;
-        if (!$url) {
-            $q = urlencode(self::buildSearchQuery($house));
-            $searchUrl = "https://www.redfin.com/stingray/do/location-autocomplete?location=$q";
-            $json = self::fetch($searchUrl);
-            if ($json && ($data = json_decode($json, true)) && !empty($data['payload']['sections'][0]['rows'][0]['url'])) {
-                $url = 'https://www.redfin.com' . $data['payload']['sections'][0]['rows'][0]['url'];
-            }
-        }
-        if ($url) {
-            $detail = self::fetch($url);
-            if ($detail) {
-                if (preg_match('/Redfin Estimate\s*\$([0-9,]+)/i', $detail, $m)) {
-                    $facts['redfin_estimate_usd'] = (float)str_replace(',', '', $m[1]);
-                }
-                $facts['redfin_url'] = $url;
-            }
-        }
-        return $facts;
-    }
-
     public static function gather(array $house, array $options = []): array
     {
         $facts = [];
         try { $facts = array_merge($facts, self::zillow($house, $options['zillow_url'] ?? null)); } catch (\Throwable $e) {}
-        try { $facts = array_merge($facts, self::redfin($house, $options['redfin_url'] ?? null)); } catch (\Throwable $e) {}
         return $facts;
     }
 }

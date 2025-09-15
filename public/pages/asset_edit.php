@@ -366,7 +366,6 @@ if ($isEdit) {
     <div class="body">
       <div class="row" style="margin-bottom:8px">
         <div class="col-12"><label>Zillow URL (optional)</label><input id="ai_zillow_url" placeholder="https://www.zillow.com/homedetails/..."/></div>
-        <div class="col-12"><label>Redfin URL (optional)</label><input id="ai_redfin_url" placeholder="https://www.redfin.com/..."/></div>
         <div class="col-12 actions"><button class="btn" id="aiRun" type="button">Fetch & Estimate</button></div>
       </div>
       <div id="aiLoading" style="display:none;align-items:center;gap:8px"><div class="spinner"></div><div>Fetching sources and contacting AI…</div></div>
@@ -483,10 +482,9 @@ if ($isEdit) {
         var applyBtn = document.getElementById('aiApply');
         loading.style.display='flex'; result.style.display='none'; errorEl.style.display='none'; applyBtn.style.display='none';
         var zurl = document.getElementById('ai_zillow_url').value || '';
-        var rurl = document.getElementById('ai_redfin_url').value || '';
         fetch('<?= Util::baseUrl('ai.php') ?>', {
           method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl, redfin_url: rurl })
+          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl })
         }).then(r=>r.json()).then(data=>{
           if (!data.ok) throw new Error(data.error||'Failed');
           var val = data.data.valuation || {};

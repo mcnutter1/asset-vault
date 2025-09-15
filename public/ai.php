@@ -58,15 +58,12 @@ try {
         // Try to gather public facts from Zillow/Redfin to improve accuracy
         $facts = PropertyScraper::gather($house, [
           'zillow_url' => $_POST['zillow_url'] ?? null,
-          'redfin_url' => $_POST['redfin_url'] ?? null,
         ]);
 
         // If we have authoritative market value, prefer it (facts-first). Avoid AI guessing.
         $market = null; $sourceUrls = [];
         if (!empty($facts['zestimate_usd'])) { $market = (float)$facts['zestimate_usd']; }
-        elseif (!empty($facts['redfin_estimate_usd'])) { $market = (float)$facts['redfin_estimate_usd']; }
         if (!empty($facts['zillow_url'])) $sourceUrls[] = $facts['zillow_url'];
-        if (!empty($facts['redfin_url'])) $sourceUrls[] = $facts['redfin_url'];
 
         if ($market !== null) {
           $repl = null; $assump = [];
@@ -78,7 +75,7 @@ try {
           } else {
             $assump[] = 'Replacement cost pending sqft; please verify size or enter manually.';
           }
-          $assump[] = 'Market value from public sources (Zillow/Redfin).';
+          $assump[] = 'Market value from public source (Zillow).';
           $result = [
             'valuation' => [
               'market_value_usd' => $market,
