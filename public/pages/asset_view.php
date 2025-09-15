@@ -212,43 +212,54 @@ if ($policies) {
 }
 
 ?>
-<div class="card">
-  <div class="header-card">
-    <div class="header-left">
-      <div class="header-title"><?= Util::h($asset['name']) ?></div>
-      <div class="header-meta">
+<div class="card asset-header">
+  <div class="asset-primary">
+    <div>
+      <div class="header-title" style="margin:0 0 4px; font-size:26px; font-weight:800; letter-spacing:.3px;">
+        <?= Util::h($asset['name']) ?>
+      </div>
+      <div class="asset-tags">
         <span class="pill">Category: <?= Util::h($asset['category_name']) ?></span>
         <?php if ($asset['location_name']): ?><span class="pill">Location: <?= Util::h($asset['location_name']) ?></span><?php endif; ?>
         <?php if ($parent): ?><span class="pill">Parent: <?= Util::h($parent['name']) ?></span><?php endif; ?>
-        <span class="value-pill">Current: <?= $currentValue!==null? ('$'.number_format($currentValue,2)) : '—' ?></span>
-        <span class="value-pill">Replace: <?= $replaceValue!==null? ('$'.number_format($replaceValue,2)) : '—' ?></span>
+        <?php if ($primaryPolicyChosen): ?>
+          <?php $pCount = count($primaryPolicyChosen); ?><span class="pill primary">Policies: <?= $pCount ?></span>
+        <?php endif; ?>
       </div>
-      <?php if ($policies): ?>
-        <style>
-          .policy-fields { display: grid; gap: 10px; margin-top: 10px; }
-          .policy-field-row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); background:#f9fafb; border:1px solid var(--border); padding:10px 12px; border-radius:10px; }
-          .policy-field-row div { font-size:13px; }
-          .policy-field-row div strong { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color: var(--muted); margin-bottom:2px; }
-        </style>
-        <div class="policy-fields">
-      <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; ?>
-            <div class="policy-field-row">
-              <div><strong>Policy #</strong><?= Util::h($pol['policy_number']) ?></div>
-        <div><strong>Insurer</strong><?= Util::h($pol['insurer']) ?></div>
-        <div><strong>Type</strong><?= Util::h($pol['policy_type']) ?></div>
-        <div><strong>Primary Coverage</strong><?= $chosen ? Util::h($chosen['code']) : '—' ?><?= $chosen && $chosen['limit_amount']!==null ? ' ($'.number_format((float)$chosen['limit_amount'],0).')' : '' ?></div>
-            </div>
-          <?php endforeach; ?>
-        </div>
-      <?php endif; ?>
+    </div>
+    <?php if ($asset['description']): ?><div class="small" style="line-height:1.5; margin-top:4px; max-width:680px;"><?= nl2br(Util::h($asset['description'])) ?></div><?php endif; ?>
+    <div class="asset-stats">
+      <div class="asset-stat"><div class="label">Current Value</div><div class="value"><?= $currentValue!==null? '$'.number_format($currentValue,0) : '—' ?></div></div>
+      <div class="asset-stat"><div class="label">Replacement</div><div class="value"><?= $replaceValue!==null? '$'.number_format($replaceValue,0) : '—' ?></div></div>
+      <?php $contentsSum = $memoTotals[$asset['id']]['contents'] ?? 0.0; ?>
+      <div class="asset-stat"><div class="label">Contents Sum</div><div class="value"><?= $contentsSum? '$'.number_format($contentsSum,0) : '—' ?></div></div>
+      <?php $totalVal = $memoTotals[$asset['id']]['total'] ?? (($replaceValue ?? 0)+($contentsSum ?? 0)); ?>
+      <div class="asset-stat"><div class="label">Total Protected</div><div class="value"><?= $totalVal? '$'.number_format($totalVal,0) : '—' ?></div></div>
     </div>
   </div>
-  <?php if ($asset['description']): ?><p><?= nl2br(Util::h($asset['description'])) ?></p><?php endif; ?>
+  <div>
+    <?php if ($policies): ?>
+      <div class="policy-fields compact">
+        <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; ?>
+          <div class="policy-field-row" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">
+            <div><strong>#</strong><?= Util::h($pol['policy_number']) ?></div>
+            <div><strong>Insurer</strong><?= Util::h($pol['insurer']) ?></div>
+            <div><strong>Type</strong><?= Util::h($pol['policy_type']) ?></div>
+            <div><strong>Coverage</strong><?= $chosen ? Util::h($chosen['code']) : '—' ?></div>
+            <?php if ($chosen && $chosen['limit_amount']!==null): ?><div><strong>Limit</strong>$<?= number_format((float)$chosen['limit_amount'],0) ?></div><?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    <?php else: ?>
+      <div class="small muted" style="text-align:right">No policies linked.</div>
+    <?php endif; ?>
+  </div>
+</div>
 
-  <div class="row">
-    <div class="col-4"><label>Make</label><div><?= Util::h($asset['make']) ?></div></div>
-    <div class="col-4"><label>Model</label><div><?= Util::h($asset['model']) ?></div></div>
-    <div class="col-4"><label>Year</label><div><?= Util::h($asset['year']) ?></div></div>
+  <div class="row" style="margin-top:10px">
+    <div class="col-4"><label>Make</label><div><?= Util::h($asset['make']) ?: '—' ?></div></div>
+    <div class="col-4"><label>Model</label><div><?= Util::h($asset['model']) ?: '—' ?></div></div>
+    <div class="col-4"><label>Year</label><div><?= Util::h($asset['year']) ?: '—' ?></div></div>
   </div>
 
   <?php if ($photos): ?>
@@ -263,7 +274,7 @@ if ($policies) {
 
 <?php if ($flat): ?>
 <div class="card" style="margin-top:16px">
-  <h2>Contents</h2>
+  <div class="section-head"><h2>Contents</h2><div class="small muted">Replacement + nested totals</div></div>
   <table>
     <thead><tr><th>Asset</th><th>Category</th><th>Location</th><th>Coverage</th><th>Replace</th><th>Contents</th><th>Total</th></tr></thead>
     <tbody>
