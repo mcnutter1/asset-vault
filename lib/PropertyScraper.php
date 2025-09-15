@@ -30,33 +30,58 @@ class PropertyScraper
         return trim(implode(', ', array_unique($parts)));
     }
 
-    public static function zillow(array $house): array
+    private static function parseZillowDetail(string $html): array
     {
         $facts = [];
-        $q = urlencode(self::buildSearchQuery($house));
-        $searchUrl = "https://www.zillow.com/homes/$q";
-        $html = self::fetch($searchUrl);
-        $targetUrl = null;
-        if ($html) {
-            if (preg_match('/https:\/\/www\.zillow\.com\/homedetails\/[A-Za-z0-9\-_,.%]+/i', $html, $m)) {
-                $targetUrl = html_entity_decode($m[0]);
+        if (preg_match('/Zestimate[^$]*\$([0-9,]+)/i', $html, $m)) {
+            $facts['zestimate_usd'] = (float)str_replace(',', '', $m[1]);
+        }
+        if (preg_match('/"zestimate"\s*:\s*(\d+)/i', $html, $m)) {
+            $facts['zestimate_usd'] = (float)$m[1];
+        }
+        if (preg_match('/"livingArea"\s*:\s*(\d+)/i', $html, $m)) {
+            $facts['sq_ft'] = (int)$m[1];
+        } elseif (preg_match('/([0-9,]+)\s*sq\s*ft/i', $html, $m)) {
+            $facts['sq_ft'] = (int)str_replace(',', '', $m[1]);
+        }
+        if (preg_match('/"bedrooms"\s*:\s*(\d+(?:\.\d+)?)/i', $html, $m)) {
+            $facts['beds'] = (float)$m[1];
+        } elseif (preg_match('/(\d+)\s*beds?/i', $html, $m)) {
+            $facts['beds'] = (int)$m[1];
+        }
+        if (preg_match('/"bathrooms(?:TotalInteger)?"\s*:\s*(\d+(?:\.\d+)?)/i', $html, $m)) {
+            $facts['baths'] = (float)$m[1];
+        } elseif (preg_match('/(\d+(?:\.\d+)?)\s*baths?/i', $html, $m)) {
+            $facts['baths'] = (float)$m[1];
+        }
+        if (preg_match('/"yearBuilt"\s*:\s*(\d{4})/i', $html, $m)) {
+            $facts['year_built'] = (int)$m[1];
+        }
+        if (preg_match('/"lotAreaValue"\s*:\s*(\d+(?:\.\d+)?).*?"lotAreaUnits"\s*:\s*"(acres|sqft)"/is', $html, $m)) {
+            $val = (float)$m[1]; $unit = strtolower($m[2]);
+            $facts['lot_size_acres'] = $unit === 'acres' ? $val : ($val/43560.0);
+        }
+        return $facts;
+    }
+
+    public static function zillow(array $house, ?string $directUrl = null): array
+    {
+        $facts = [];
+        $targetUrl = $directUrl;
+        if (!$targetUrl) {
+            $q = urlencode(self::buildSearchQuery($house));
+            $searchUrl = "https://www.zillow.com/homes/$q";
+            $html = self::fetch($searchUrl);
+            if ($html) {
+                if (preg_match('/https:\/\/www\.zillow\.com\/homedetails\/[A-Za-z0-9\-_,.%]+/i', $html, $m)) {
+                    $targetUrl = html_entity_decode($m[0]);
+                }
             }
         }
         if ($targetUrl) {
             $detail = self::fetch($targetUrl);
             if ($detail) {
-                if (preg_match('/Zestimate\s*:\s*\$([0-9,]+)/i', $detail, $m)) {
-                    $facts['zestimate_usd'] = (float)str_replace(',', '', $m[1]);
-                }
-                if (preg_match('/([0-9,]+)\s*sq\s*ft/i', $detail, $m)) {
-                    $facts['sq_ft'] = (int)str_replace(',', '', $m[1]);
-                }
-                if (preg_match('/(\d+)\s*beds?/i', $detail, $m)) {
-                    $facts['beds'] = (int)$m[1];
-                }
-                if (preg_match('/(\d+(?:\.\d+)?)\s*baths?/i', $detail, $m)) {
-                    $facts['baths'] = (float)$m[1];
-                }
+                $facts = array_merge($facts, self::parseZillowDetail($detail));
                 $facts['zillow_url'] = $targetUrl;
             }
         }
@@ -82,12 +107,11 @@ class PropertyScraper
         return $facts;
     }
 
-    public static function gather(array $house): array
+    public static function gather(array $house, array $options = []): array
     {
         $facts = [];
-        try { $facts = array_merge($facts, self::zillow($house)); } catch (\Throwable $e) {}
+        try { $facts = array_merge($facts, self::zillow($house, $options['zillow_url'] ?? null)); } catch (\Throwable $e) {}
         try { $facts = array_merge($facts, self::redfin($house)); } catch (\Throwable $e) {}
         return $facts;
     }
 }
-

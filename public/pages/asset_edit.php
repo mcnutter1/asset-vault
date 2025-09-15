@@ -364,7 +364,12 @@ if ($isEdit) {
   <div class="modal" style="width:min(760px,92vw)">
     <div class="head"><strong>AI Valuation</strong><button class="x" data-modal-close="aiModal">✕</button></div>
     <div class="body">
-      <div id="aiLoading" style="display:flex;align-items:center;gap:8px"><div class="spinner"></div><div>Contacting AI…</div></div>
+      <div class="row" style="margin-bottom:8px">
+        <div class="col-12"><label>Zillow URL (optional)</label><input id="ai_zillow_url" placeholder="https://www.zillow.com/homedetails/..."/></div>
+        <div class="col-12"><label>Redfin URL (optional)</label><input id="ai_redfin_url" placeholder="https://www.redfin.com/..."/></div>
+        <div class="col-12 actions"><button class="btn" id="aiRun" type="button">Fetch & Estimate</button></div>
+      </div>
+      <div id="aiLoading" style="display:none;align-items:center;gap:8px"><div class="spinner"></div><div>Fetching sources and contacting AI…</div></div>
       <div id="aiResult" style="display:none">
         <div class="row">
           <div class="col-6"><label>Market Value (USD)</label><input id="ai_market" type="number" step="0.01"></div>
@@ -464,36 +469,45 @@ if ($isEdit) {
     aiBtn.addEventListener('click', function(){
       var modal = document.getElementById('aiModal');
       if (modal) modal.classList.add('show');
-      var loading = document.getElementById('aiLoading');
-      var result = document.getElementById('aiResult');
-      var errorEl = document.getElementById('aiError');
-      var applyBtn = document.getElementById('aiApply');
-      loading.style.display='flex'; result.style.display='none'; errorEl.style.display='none'; applyBtn.style.display='none';
-      fetch('<?= Util::baseUrl('ai.php') ?>', {
-        method:'POST',
-        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>' })
-      }).then(r=>r.json()).then(data=>{
-        if (!data.ok) throw new Error(data.error||'Failed');
-        var val = data.data.valuation || {};
-        document.getElementById('ai_market').value = val.market_value_usd ?? '';
-        document.getElementById('ai_replace').value = val.replacement_cost_usd ?? '';
-        document.getElementById('ai_confidence').value = val.confidence ?? '';
-        document.getElementById('ai_assumptions').value = val.assumptions ?? '';
-        document.getElementById('ai_sources').value = (val.sources||[]).join(', ');
-        loading.style.display='none'; result.style.display='block'; applyBtn.style.display='inline-flex';
-        applyBtn.onclick = function(){
-          var mv = document.getElementById('ai_market').value;
-          var rc = document.getElementById('ai_replace').value;
-          fetch('<?= Util::baseUrl('ai.php') ?>', {
-            method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-            body: new URLSearchParams({ action:'apply', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', market_value_usd: mv, replacement_cost_usd: rc })
-          }).then(r=>r.json()).then(d=>{
-            if (!d.ok) throw new Error(d.error||'Failed to apply');
-            location.reload();
-          }).catch(e=>{ errorEl.textContent = e.message; errorEl.style.display='block'; });
-        }
-      }).catch(e=>{ loading.style.display='none'; errorEl.textContent = e.message; errorEl.style.display='block'; });
+      // reset state
+      document.getElementById('aiLoading').style.display='none';
+      document.getElementById('aiResult').style.display='none';
+      document.getElementById('aiError').style.display='none';
+      document.getElementById('aiApply').style.display='none';
+      var run = document.getElementById('aiRun');
+      run.onclick = function(){
+        var loading = document.getElementById('aiLoading');
+        var result = document.getElementById('aiResult');
+        var errorEl = document.getElementById('aiError');
+        var applyBtn = document.getElementById('aiApply');
+        loading.style.display='flex'; result.style.display='none'; errorEl.style.display='none'; applyBtn.style.display='none';
+        var zurl = document.getElementById('ai_zillow_url').value || '';
+        var rurl = document.getElementById('ai_redfin_url').value || '';
+        fetch('<?= Util::baseUrl('ai.php') ?>', {
+          method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl, redfin_url: rurl })
+        }).then(r=>r.json()).then(data=>{
+          if (!data.ok) throw new Error(data.error||'Failed');
+          var val = data.data.valuation || {};
+          document.getElementById('ai_market').value = val.market_value_usd ?? '';
+          document.getElementById('ai_replace').value = val.replacement_cost_usd ?? '';
+          document.getElementById('ai_confidence').value = val.confidence ?? '';
+          document.getElementById('ai_assumptions').value = val.assumptions ?? '';
+          document.getElementById('ai_sources').value = (val.sources||[]).join(', ');
+          loading.style.display='none'; result.style.display='block'; applyBtn.style.display='inline-flex';
+          applyBtn.onclick = function(){
+            var mv = document.getElementById('ai_market').value;
+            var rc = document.getElementById('ai_replace').value;
+            fetch('<?= Util::baseUrl('ai.php') ?>', {
+              method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+              body: new URLSearchParams({ action:'apply', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', market_value_usd: mv, replacement_cost_usd: rc })
+            }).then(r=>r.json()).then(d=>{
+              if (!d.ok) throw new Error(d.error||'Failed to apply');
+              location.reload();
+            }).catch(e=>{ errorEl.textContent = e.message; errorEl.style.display='block'; });
+          }
+        }).catch(e=>{ document.getElementById('aiLoading').style.display='none'; document.getElementById('aiError').textContent = e.message; document.getElementById('aiError').style.display='block'; });
+      };
     });
   })();
  </script>
