@@ -103,23 +103,6 @@ class ValueEstimators
                 'type' => 'object',
                 'additionalProperties' => false,
                 'properties' => [
-                    'house' => [
-                        'type' => 'object',
-                        'additionalProperties' => false,
-                        'properties' => [
-                            'address' => ['type' => 'string'],
-                            'city' => ['type' => 'string'],
-                            'state' => ['type' => 'string'],
-                            'zip' => ['type' => 'string'],
-                            'sq_ft' => ['type' => 'number'],
-                            'lot_size_acres' => ['type' => 'number'],
-                            'year_built' => ['type' => 'integer'],
-                            'beds' => ['type' => 'integer'],
-                            'baths' => ['type' => 'number'],
-                            'condition' => ['type' => 'string']
-                        ],
-                        'required' => ['address','city','state','zip','sq_ft','lot_size_acres','year_built','beds','baths','condition']
-                    ],
                     'valuation' => [
                         'type' => 'object',
                         'additionalProperties' => false,
@@ -133,7 +116,7 @@ class ValueEstimators
                         'required' => ['market_value_usd','replacement_cost_usd','assumptions','confidence','sources']
                     ]
                 ],
-                'required' => ['house','valuation']
+                'required' => ['valuation']
             ],
             'strict' => true
         ];
@@ -162,20 +145,6 @@ class ValueEstimators
                 'type' => 'object',
                 'additionalProperties' => false,
                 'properties' => [
-                    'device' => [
-                        'type' => 'object',
-                        'additionalProperties' => false,
-                        'properties' => [
-                            'category' => ['type' => 'string'],
-                            'brand' => ['type' => 'string'],
-                            'model' => ['type' => 'string'],
-                            'year' => ['type' => 'integer'],
-                            'condition' => ['type' => 'string'],
-                            'purchase_price_usd' => ['type' => 'number'],
-                            'purchase_date' => ['type' => 'string']
-                        ],
-                        'required' => ['category','brand','model','year','condition','purchase_price_usd','purchase_date']
-                    ],
                     'valuation' => [
                         'type' => 'object',
                         'additionalProperties' => false,
@@ -189,7 +158,7 @@ class ValueEstimators
                         'required' => ['market_value_usd','replacement_cost_usd','assumptions','confidence','sources']
                     ]
                 ],
-                'required' => ['device','valuation']
+                'required' => ['valuation']
             ],
             'strict' => true
         ];
