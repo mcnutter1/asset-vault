@@ -48,7 +48,8 @@ window.addEventListener('resize', ()=>{
   const toggle = qs('[data-nav-toggle]');
   const wrap = qs('#nav-wrap');
   if (toggle && wrap) {
-    toggle.addEventListener('click', ()=>{
+    toggle.addEventListener('click', (e)=>{
+      e.stopPropagation();
       const open = wrap.classList.toggle('open');
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
@@ -57,6 +58,13 @@ window.addEventListener('resize', ()=>{
       if (!wrap.classList.contains('open')) return;
       const within = wrap.contains(e.target) || toggle.contains(e.target);
       if (!within) { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); }
+    });
+    // Close when clicking a nav link
+    qsa('.nav a', wrap).forEach(a=>{
+      a.addEventListener('click', ()=>{
+        wrap.classList.remove('open');
+        toggle.setAttribute('aria-expanded','false');
+      });
     });
   }
 });

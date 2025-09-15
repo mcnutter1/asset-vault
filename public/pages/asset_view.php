@@ -283,6 +283,7 @@ if ($policies) {
 <?php if ($flat): ?>
 <div class="card" style="margin-top:16px">
   <div class="section-head"><h2>Contents</h2><div class="small muted">Replacement + nested totals</div></div>
+  <div class="table-wrap">
   <table>
     <thead><tr><th>Asset</th><th>Category</th><th>Location</th><th>Coverage</th><th>Replace</th><th>Contents</th><th>Total</th></tr></thead>
     <tbody>
@@ -310,5 +311,6 @@ if ($policies) {
       <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
 </div>
 <?php endif; ?>

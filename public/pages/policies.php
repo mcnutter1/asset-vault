@@ -17,6 +17,7 @@ $rows = $pdo->query('SELECT p.*, pg.display_name
     <h1>Policies</h1>
     <a class="btn sm" href="<?= Util::baseUrl('index.php?page=policy_edit&group_id=0') ?>">Add Policy</a>
   </div>
+  <div class="table-wrap">
   <table>
     <thead><tr><th>Policy #</th><th>Insurer</th><th>Type</th><th>Start</th><th>End</th><th>Premium</th><th>Status</th></tr></thead>
     <tbody>
@@ -33,4 +34,5 @@ $rows = $pdo->query('SELECT p.*, pg.display_name
       <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
 </div>

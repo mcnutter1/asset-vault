@@ -87,6 +87,7 @@ flattenRows(0, $byParent, 0, $flat);
     <h1>Assets</h1>
     <a class="btn sm" href="<?= Util::baseUrl('index.php?page=asset_edit') ?>">Add Asset</a>
   </div>
+  <div class="table-wrap">
   <table>
     <thead>
       <tr>
@@ -135,4 +136,5 @@ flattenRows(0, $byParent, 0, $flat);
       <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
 </div>
