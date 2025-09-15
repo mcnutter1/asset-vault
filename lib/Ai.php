@@ -122,6 +122,7 @@ class ValueEstimators
                     ],
                     'valuation' => [
                         'type' => 'object',
+                        'additionalProperties' => false,
                         'properties' => [
                             'market_value_usd' => ['type' => 'number'],
                             'replacement_cost_usd' => ['type' => 'number'],
@@ -175,6 +176,7 @@ class ValueEstimators
                     ],
                     'valuation' => [
                         'type' => 'object',
+                        'additionalProperties' => false,
                         'properties' => [
                             'market_value_usd' => ['type' => 'number'],
                             'replacement_cost_usd' => ['type' => 'number'],
