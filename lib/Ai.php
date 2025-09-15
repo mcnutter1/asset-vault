@@ -37,10 +37,8 @@ class AiClient
         $msgs[] = ['role' => 'user', 'content' => json_encode($userPayload, JSON_UNESCAPED_SLASHES)];
 
         // Prefer new Responses API parameter: text.format (json_schema)
-        $jsonFormat = [
-            'type' => 'json_schema',
-            'json_schema' => $schema,
-        ];
+        // New format expects name/schema/strict at the top level of format (not nested)
+        $jsonFormat = array_merge(['type' => 'json_schema'], $schema);
 
         $payload = [
             'model' => $this->model,
