@@ -20,11 +20,24 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, H
 .container { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
 .app-bar { position: sticky; top: 0; background: #FAF9F8; border-bottom: 1px solid var(--border); z-index: 10; }
-.app-bar .inner { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; }
+.app-bar .inner { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; gap: 8px; }
 .brand { color: var(--primary); font-weight: 800; letter-spacing: 0.3px; }
 
-.nav a { color: var(--text); text-decoration: none; padding: 8px 12px; border-radius: 8px; border: 1px solid transparent; }
+/* Responsive nav */
+.nav-toggle { display: none; width: 38px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: #fff; align-items: center; justify-content: center; gap: 4px; cursor: pointer; }
+.nav-toggle span { display: block; width: 18px; height: 2px; background: var(--text); border-radius: 2px; }
+.nav-wrap { display: flex; align-items: center; gap: 10px; }
+.nav a { color: var(--text); text-decoration: none; padding: 8px 12px; border-radius: 8px; border: 1px solid transparent; display: inline-block; }
 .nav a.active, .nav a:hover { color: var(--primary); background: #E7F3FF; border-color: #D0E7FF; }
+.nav-wrap .logout { margin-left: 6px; }
+@media (max-width: 840px) {
+  .nav-toggle { display: inline-flex; }
+  .nav-wrap { position: absolute; left: 0; right: 0; top: 56px; background: #FAF9F8; border-bottom: 1px solid var(--border); padding: 10px 12px; display: grid; gap: 8px; grid-template-columns: 1fr; transform-origin: top; transform: scaleY(0.9); opacity: 0; pointer-events: none; transition: transform .15s ease, opacity .15s ease; }
+  .nav-wrap.open { transform: scaleY(1); opacity: 1; pointer-events: auto; }
+  .nav { display: grid; gap: 6px; }
+  .nav a { padding: 10px 12px; background: #fff; border: 1px solid var(--border); }
+  .nav-wrap .logout { justify-self: end; }
+}
 
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
 .card + .card { margin-top: 16px; }

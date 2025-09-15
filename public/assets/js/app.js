@@ -44,6 +44,21 @@ window.addEventListener('resize', ()=>{
     const json = c.getAttribute('data-series');
     if (json) drawLineChart(c, JSON.parse(json));
   });
+  // Mobile nav toggle
+  const toggle = qs('[data-nav-toggle]');
+  const wrap = qs('#nav-wrap');
+  if (toggle && wrap) {
+    toggle.addEventListener('click', ()=>{
+      const open = wrap.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    // Close on outside click (mobile)
+    document.addEventListener('click', (e)=>{
+      if (!wrap.classList.contains('open')) return;
+      const within = wrap.contains(e.target) || toggle.contains(e.target);
+      if (!within) { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); }
+    });
+  }
 });
 
 window.addEventListener('DOMContentLoaded', ()=>{
