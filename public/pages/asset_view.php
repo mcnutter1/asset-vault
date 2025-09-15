@@ -237,26 +237,32 @@ if ($policies) {
       <div class="asset-stat"><div class="label">Contents Sum</div><div class="value"><?= $contentsSum? '$'.number_format($contentsSum,0) : '—' ?></div></div>
       <div class="asset-stat"><div class="label">Total Protected</div><div class="value"><?= $totalVal? '$'.number_format($totalVal,0) : '—' ?></div></div>
     </div>
-    <div class="details" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); margin-top:4px;">
-      <div class="asset-stat" style="background:#fff;"><div class="label">Make</div><div class="value" style="font-size:16px; font-weight:600;"><?= Util::h($asset['make']) ?: '—' ?></div></div>
-      <div class="asset-stat" style="background:#fff;"><div class="label">Model</div><div class="value" style="font-size:16px; font-weight:600;"><?= Util::h($asset['model']) ?: '—' ?></div></div>
-      <div class="asset-stat" style="background:#fff;"><div class="label">Year</div><div class="value" style="font-size:16px; font-weight:600;"><?= Util::h($asset['year']) ?: '—' ?></div></div>
+    <div class="asset-attributes">
+      <div class="asset-attr"><span class="attr-label">Make</span><span class="attr-value"><?= Util::h($asset['make']) ?: '—' ?></span></div>
+      <div class="asset-attr"><span class="attr-label">Model</span><span class="attr-value"><?= Util::h($asset['model']) ?: '—' ?></span></div>
+      <div class="asset-attr"><span class="attr-label">Year</span><span class="attr-value"><?= Util::h($asset['year']) ?: '—' ?></span></div>
+      <div class="asset-attr"><span class="attr-label">Token</span><span class="attr-value" style="font-family:monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; max-width:160px; display:inline-block;">
+        <?= Util::h(substr($asset['public_token'] ?? '',0,20)) ?>
+      </span></div>
     </div>
-    <?php if ($policies): ?>
-      <div class="policy-fields compact" style="margin-top:8px;">
-        <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; ?>
-          <div class="policy-field-row" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); background:#FAF9F8;">
-            <div><strong>#</strong><?= Util::h($pol['policy_number']) ?></div>
-            <div><strong>Insurer</strong><?= Util::h($pol['insurer']) ?></div>
-            <div><strong>Type</strong><?= Util::h($pol['policy_type']) ?></div>
-            <div><strong>Coverage</strong><?= $chosen ? Util::h($chosen['code']) : '—' ?></div>
-            <?php if ($chosen && $chosen['limit_amount']!==null): ?><div><strong>Limit</strong>$<?= number_format((float)$chosen['limit_amount'],0) ?></div><?php endif; ?>
-          </div>
-        <?php endforeach; ?>
-      </div>
-    <?php else: ?>
-      <div class="small muted" style="margin-top:4px;">No policies linked.</div>
-    <?php endif; ?>
+    <div class="insurance-block">
+      <div class="insurance-header">Insurance</div>
+      <?php if ($policies): ?>
+        <div class="policy-list">
+          <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; ?>
+            <div class="policy-item">
+              <div><span class="p-label">Policy #</span><span class="p-value"><?= Util::h($pol['policy_number']) ?></span></div>
+              <div><span class="p-label">Insurer</span><span class="p-value"><?= Util::h($pol['insurer']) ?></span></div>
+              <div><span class="p-label">Type</span><span class="p-value"><?= Util::h($pol['policy_type']) ?></span></div>
+              <div><span class="p-label">Primary Coverage</span><span class="p-value"><?= $chosen? '<span class="coverage-badge">'.Util::h($chosen['code']).'</span>' : '—' ?></span></div>
+              <div><span class="p-label">Limit</span><span class="p-value"><?= ($chosen && $chosen['limit_amount']!==null)? '$'.number_format((float)$chosen['limit_amount'],0) : '—' ?></span></div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php else: ?>
+        <div class="small muted">No policies linked.</div>
+      <?php endif; ?>
+    </div>
     <?php if ($photos): ?>
       <div class="mini-gallery" style="margin-top:12px;">
         <div class="small muted" style="margin:0 0 6px; font-weight:600;letter-spacing:.5px;text-transform:uppercase;">Photos</div>
