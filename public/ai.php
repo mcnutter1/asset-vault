@@ -109,6 +109,24 @@ try {
         ];
         $result = ValueEstimators::valueElectronics($ai, $device);
         json_out(['ok'=>true,'type'=>'electronics','data'=>$result]);
+      } elseif (
+        strpos($category, 'vehicle') !== false ||
+        strpos($category, 'car') !== false ||
+        strpos($category, 'truck') !== false ||
+        strpos($category, 'auto') !== false ||
+        strpos($category, 'suv') !== false
+      ) {
+        // Vehicle: use make/model/year and any notes as condition; VIN if present
+        $vehicle = [
+          'make' => $asset['make'] ?? '',
+          'model' => $asset['model'] ?? '',
+          'year' => $asset['year'] ?? null,
+          'vin' => $asset['serial_number'] ?? null,
+          'condition' => substr(trim(($asset['description'] ?? '') . ' ' . ($asset['notes'] ?? '')), 0, 200),
+          // Mileage not tracked; left null
+        ];
+        $result = ValueEstimators::valueVehicle($ai, $vehicle);
+        json_out(['ok'=>true,'type'=>'vehicle','data'=>$result]);
       } else {
         json_out(['ok'=>false,'error'=>'Unsupported category for AI'], 200);
       }

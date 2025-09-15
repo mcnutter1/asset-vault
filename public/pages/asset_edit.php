@@ -365,7 +365,7 @@ if ($isEdit) {
     <div class="head"><strong>AI Valuation</strong><button class="x" data-modal-close="aiModal">✕</button></div>
     <div class="body">
       <div class="row" style="margin-bottom:8px">
-        <div class="col-12 actions"><button class="btn" id="aiRun" type="button">Estimate (Zillow First)</button></div>
+        <div class="col-12 actions"><button class="btn" id="aiRun" type="button">Estimate</button></div>
       </div>
       <div id="aiLoading" style="display:none;align-items:center;gap:8px"><div class="spinner"></div><div>Fetching sources and contacting AI…</div></div>
       <div id="aiResult" style="display:none">

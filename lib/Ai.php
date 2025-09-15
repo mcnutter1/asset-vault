@@ -173,4 +173,45 @@ class ValueEstimators
         ];
         return $ai->callJson($system, $user, $schema);
     }
+
+    /**
+     * Vehicle valuation (cars, trucks, SUVs, motorcycles).
+     */
+    public static function valueVehicle(AiClient $ai, array $vehicle): array
+    {
+        $schema = [
+            'name' => 'VehicleValuation',
+            'schema' => [
+                'type' => 'object',
+                'additionalProperties' => false,
+                'properties' => [
+                    'valuation' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'market_value_usd' => ['type' => 'number'],
+                            'replacement_cost_usd' => ['type' => 'number'],
+                            'assumptions' => ['type' => 'string'],
+                            'confidence' => ['type' => 'string', 'enum' => ['low','medium','high']],
+                            'sources' => ['type' => 'array', 'items' => ['type' => 'string']]
+                        ],
+                        'required' => ['market_value_usd','replacement_cost_usd','assumptions','confidence','sources']
+                    ]
+                ],
+                'required' => ['valuation']
+            ],
+            'strict' => true
+        ];
+
+        $system = [
+            'You are a vehicle valuation assistant.',
+            'Estimate CURRENT MARKET VALUE (typical retail/private party in USD) and REPLACEMENT COST (cost to buy a comparable vehicle new or equivalent) for the described vehicle.',
+            'Use reliable US market sources (e.g., KBB, Edmunds) methodology; cite them in sources. If VIN or mileage are missing, infer a reasonable range and state assumptions.'
+        ];
+        $user = [
+            'task' => 'value_vehicle',
+            'vehicle' => $vehicle,
+        ];
+        return $ai->callJson($system, $user, $schema);
+    }
 }
