@@ -118,6 +118,7 @@ class ValueEstimators
                             'baths' => ['type' => 'number'],
                             'condition' => ['type' => 'string']
                         ],
+                        'required' => ['address','city','state','zip','sq_ft','lot_size_acres','year_built','beds','baths','condition']
                     ],
                     'valuation' => [
                         'type' => 'object',
@@ -128,7 +129,7 @@ class ValueEstimators
                             'confidence' => ['type' => 'string', 'enum' => ['low','medium','high']],
                             'sources' => ['type' => 'array', 'items' => ['type' => 'string']]
                         ],
-                        'required' => ['market_value_usd','replacement_cost_usd']
+                        'required' => ['market_value_usd','replacement_cost_usd','assumptions','confidence','sources']
                     ]
                 ],
                 'required' => ['house','valuation']
@@ -169,7 +170,8 @@ class ValueEstimators
                             'condition' => ['type' => 'string'],
                             'purchase_price_usd' => ['type' => 'number'],
                             'purchase_date' => ['type' => 'string']
-                        ]
+                        ],
+                        'required' => ['category','brand','model','year','condition','purchase_price_usd','purchase_date']
                     ],
                     'valuation' => [
                         'type' => 'object',
@@ -180,7 +182,7 @@ class ValueEstimators
                             'confidence' => ['type' => 'string', 'enum' => ['low','medium','high']],
                             'sources' => ['type' => 'array', 'items' => ['type' => 'string']]
                         ],
-                        'required' => ['market_value_usd','replacement_cost_usd']
+                        'required' => ['market_value_usd','replacement_cost_usd','assumptions','confidence','sources']
                     ]
                 ],
                 'required' => ['device','valuation']
