@@ -83,9 +83,9 @@ flattenRows(0, $byParent, 0, $flat);
 ?>
 
 <div class="card">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+  <div class="section-head" style="margin-bottom:8px">
     <h1>Assets</h1>
-    <a class="btn" href="<?= Util::baseUrl('index.php?page=asset_edit') ?>">Add Asset</a>
+    <a class="btn sm" href="<?= Util::baseUrl('index.php?page=asset_edit') ?>">Add Asset</a>
   </div>
   <table>
     <thead>
@@ -113,22 +113,22 @@ flattenRows(0, $byParent, 0, $flat);
           <td>$<?= number_format($t['contents'], 2) ?></td>
           <td><strong>$<?= number_format($t['total'], 2) ?></strong></td>
           <td class="actions">
-            <a class="btn ghost" href="<?= Util::baseUrl('index.php?page=asset_edit&id='.(int)$row['id']) ?>">Edit</a>
+            <a class="btn sm ghost" href="<?= Util::baseUrl('index.php?page=asset_edit&id='.(int)$row['id']) ?>">Edit</a>
             <?php if (!empty($row['public_token'])): $viewUrl = Util::baseUrl('index.php?page=asset_view&code='.$row['public_token']); ?>
-              <a class="btn ghost" href="<?= $viewUrl ?>" target="_blank">View</a>
+              <a class="btn sm ghost" href="<?= $viewUrl ?>" target="_blank">View</a>
             <?php else: ?>
               <form method="post" style="display:inline" onsubmit="return confirmAction('Create public link for this asset?')">
                 <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                 <input type="hidden" name="action" value="gen_token">
                 <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
-                <button class="btn ghost" type="submit">Create Link</button>
+                <button class="btn sm ghost" type="submit">Create Link</button>
               </form>
             <?php endif; ?>
             <form method="post" style="display:inline" onsubmit="return confirmAction('Delete asset?')">
               <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
-              <button class="btn ghost danger" type="submit">Delete</button>
+              <button class="btn sm ghost danger" type="submit">Delete</button>
             </form>
           </td>
         </tr>

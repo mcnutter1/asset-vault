@@ -66,6 +66,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .btn.ghost:hover { background: #F3F2F1; }
 .btn.danger { background: var(--danger); }
 .btn.success { background: var(--success); }
+/* Small button variant for sleeker tables and headers */
+.btn.sm { padding: 6px 10px; font-size: 13px; border-radius: 8px; }
 
 table { width: 100%; border-collapse: collapse; background: #fff; }
 th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; }
@@ -86,6 +88,8 @@ tbody tr:hover { background: #FAF9F8; }
 .section-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .section-head h2 { margin: 0; }
 .section-head .btn { white-space: nowrap; }
+/* Optional sticky page header look */
+.page-header .section-head h1 { margin: 0; font-size: 22px; }
 
 /* Prevent overflow in forms */
 .card .row, .settings-card .row { min-width: 0; }

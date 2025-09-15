@@ -13,9 +13,13 @@ if ($isEdit) {
   $groupId = $policy ? (int)$policy['policy_group_id'] : $groupId;
 }
 
-// Create initial policy in a group when saving for first time
-if (!$isEdit && $groupId && (($_POST['action'] ?? '') === 'save')) {
+// Create initial policy when saving for first time; if no group, create one implicitly
+if (!$isEdit && (($_POST['action'] ?? '') === 'save')) {
   Util::checkCsrf();
+  if (!$groupId) {
+    $pdo->prepare('INSERT INTO policy_groups(display_name) VALUES (NULL)')->execute();
+    $groupId = (int)$pdo->lastInsertId();
+  }
   $version_number = 1;
   $policy_number = trim($_POST['policy_number'] ?? '');
   $insurer = trim($_POST['insurer'] ?? '');
@@ -200,7 +204,7 @@ if ($isEdit) {
 <div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
     <h1><?= $isEdit ? 'Edit Policy' : 'Create Policy' ?></h1>
-    <a class="btn ghost" href="<?= Util::baseUrl('index.php?page=policies') ?>">Back</a>
+    <a class="btn sm ghost" href="<?= Util::baseUrl('index.php?page=policies') ?>">Back</a>
   </div>
   <form method="post">
     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
@@ -230,9 +234,9 @@ if ($isEdit) {
       <div class="col-3"><label>Premium</label><input type="number" step="0.01" name="premium" value="<?= Util::h($policy['premium'] ?? '') ?>" required></div>
       <div class="col-12"><label>Notes</label><textarea name="notes" rows="2"><?= Util::h($policy['notes'] ?? '') ?></textarea></div>
       <div class="col-12 actions" style="margin-top:8px">
-        <button class="btn" type="submit">Save</button>
+        <button class="btn sm" type="submit">Save</button>
         <?php if ($isEdit): ?>
-          <button class="btn outline" name="action" value="renew" onclick="return confirmAction('Create renewal from this version?')">Create Renewal</button>
+          <button class="btn sm outline" name="action" value="renew" onclick="return confirmAction('Create renewal from this version?')">Create Renewal</button>
         <?php endif; ?>
       </div>
     </div>
@@ -258,7 +262,7 @@ if ($isEdit) {
         <div><label>Limit</label><input type="number" step="0.01" name="limit_amount"></div>
         <div><label>Deductible</label><input type="number" step="0.01" name="deductible_amount"></div>
         <div class="col-12"><label>Notes</label><input name="cov_notes"></div>
-        <div class="col-12"><button class="btn" type="submit">Add Coverage</button></div>
+  <div class="col-12"><button class="btn sm" type="submit">Add Coverage</button></div>
       </form>
       <table>
         <thead><tr><th>Coverage</th><th>Limit</th><th>Deductible</th><th>Notes</th><th></th></tr></thead>
@@ -274,7 +278,7 @@ if ($isEdit) {
                   <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                   <input type="hidden" name="action" value="remove_coverage">
                   <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
-                  <button class="btn ghost danger">Remove</button>
+                  <button class="btn sm ghost danger">Remove</button>
                 </form>
               </td>
             </tr>
@@ -304,7 +308,7 @@ if ($isEdit) {
             <option value="0">No</option>
           </select>
         </div>
-        <div class="col-12"><button class="btn" type="submit">Link</button></div>
+  <div class="col-12"><button class="btn sm" type="submit">Link</button></div>
       </form>
       <table>
         <thead><tr><th>Asset</th><th>Children</th><th></th></tr></thead>
@@ -318,7 +322,7 @@ if ($isEdit) {
                   <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                   <input type="hidden" name="action" value="unlink_asset">
                   <input type="hidden" name="asset_id" value="<?= (int)$la['id'] ?>">
-                  <button class="btn ghost danger">Unlink</button>
+                  <button class="btn sm ghost danger">Unlink</button>
                 </form>
               </td>
             </tr>
@@ -354,7 +358,7 @@ if ($isEdit) {
         <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
         <input type="hidden" name="action" value="upload_file">
         <input type="file" name="docs[]" multiple>
-        <button class="btn" type="submit">Upload</button>
+  <button class="btn sm" type="submit">Upload</button>
       </form>
       <?php if (!$policyFiles): ?>
         <div class="small muted">No documents uploaded.</div>
@@ -373,7 +377,7 @@ if ($isEdit) {
                     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                     <input type="hidden" name="action" value="delete_file">
                     <input type="hidden" name="file_id" value="<?= (int)$f['id'] ?>">
-                    <button class="btn ghost danger">Delete</button>
+                    <button class="btn sm ghost danger">Delete</button>
                   </form>
                 </td>
               </tr>
