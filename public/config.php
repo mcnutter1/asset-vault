@@ -3,7 +3,7 @@
 // Adjust values if your hostnames differ.
 return [
   'login_base' => 'https://login.mcnutt.cloud',
-  'app_id'     => 'test-app',
+  'app_id'     => 'vault',
   'app_secret' => 'ff4e49816d49dbadf01c76fa560821dd84c1531ed415b88f76dd85944879c48b',
   'cookie_name'=> 'mc_auth',
   'cookie_domain' => '.mcnutt.cloud',
