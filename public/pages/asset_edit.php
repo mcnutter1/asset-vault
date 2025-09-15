@@ -162,12 +162,38 @@ if ($isEdit) {
   $stmt->execute([$id]);
   $photos = $stmt->fetchAll();
 }
-// Linked policies (direct)
+// Linked policies (direct) with coverage mapping
 $policies = [];
 if ($isEdit) {
-  $stmt = $pdo->prepare('SELECT p.* FROM policy_assets pa JOIN policies p ON p.id=pa.policy_id WHERE pa.asset_id=? ORDER BY p.end_date DESC');
+  $stmt = $pdo->prepare('SELECT p.*, cd.name AS cov_name, pc.limit_amount
+                         FROM policy_assets pa
+                         JOIN policies p ON p.id=pa.policy_id
+                         LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id
+                         LEFT JOIN policy_coverages pc ON pc.policy_id=p.id AND pc.coverage_definition_id=pa.coverage_definition_id
+                         WHERE pa.asset_id=? ORDER BY p.end_date DESC');
   $stmt->execute([$id]);
   $policies = $stmt->fetchAll();
+}
+
+// Handle link/unlink of policy from asset with coverage mapping
+if ($isEdit && (($_POST['action'] ?? '') === 'link_policy')) {
+  Util::checkCsrf();
+  $pid = (int)($_POST['policy_id'] ?? 0);
+  $apply = !empty($_POST['applies_to_children']) ? 1 : 0;
+  $cov = isset($_POST['coverage_definition_id']) && $_POST['coverage_definition_id']!=='' ? (int)$_POST['coverage_definition_id'] : null;
+  $childCov = isset($_POST['children_coverage_definition_id']) && $_POST['children_coverage_definition_id']!=='' ? (int)$_POST['children_coverage_definition_id'] : null;
+  $stmt = $pdo->prepare('INSERT INTO policy_assets(policy_id, asset_id, applies_to_children, coverage_definition_id, children_coverage_definition_id)
+                         VALUES (?,?,?,?,?)
+                         ON DUPLICATE KEY UPDATE applies_to_children=VALUES(applies_to_children), coverage_definition_id=VALUES(coverage_definition_id), children_coverage_definition_id=VALUES(children_coverage_definition_id)');
+  $stmt->execute([$pid, $id, $apply, $cov, $childCov]);
+  Util::redirect('index.php?page=asset_edit&id='.$id);
+}
+if ($isEdit && (($_POST['action'] ?? '') === 'unlink_policy')) {
+  Util::checkCsrf();
+  $pid = (int)($_POST['policy_id'] ?? 0);
+  $stmt = $pdo->prepare('DELETE FROM policy_assets WHERE policy_id=? AND asset_id=?');
+  $stmt->execute([$pid, $id]);
+  Util::redirect('index.php?page=asset_edit&id='.$id);
 }
 
 // Inherited policies from ancestors (applies_to_children=1)
@@ -427,20 +453,64 @@ if ($isEdit) {
       <?php if ($isEdit): ?>
       <div class="col-12">
         <h2>Linked Policies</h2>
+        <?php
+          $allPolicies = $pdo->query('SELECT id, policy_number, insurer FROM policies ORDER BY end_date DESC')->fetchAll();
+          $pcRows = $pdo->query('SELECT pc.policy_id, cd.id AS cov_id, cd.name AS cov_name FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id ORDER BY pc.policy_id, cd.name')->fetchAll();
+          $pcMap = [];
+          foreach ($pcRows as $r) { $pid = (int)$r['policy_id']; if (!isset($pcMap[$pid])) $pcMap[$pid]=[]; $pcMap[$pid][] = ['id'=>(int)$r['cov_id'], 'name'=>$r['cov_name']]; }
+        ?>
+        <form method="post" class="input-row" style="margin-bottom:8px">
+          <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+          <input type="hidden" name="action" value="link_policy">
+          <div>
+            <label>Policy</label>
+            <select name="policy_id" id="lp_policy">
+              <?php foreach ($allPolicies as $pp): ?>
+                <option value="<?= (int)$pp['id'] ?>"><?= Util::h($pp['policy_number'].' — '.$pp['insurer']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div>
+            <label>Coverage (Asset)</label>
+            <select name="coverage_definition_id" id="lp_cov"></select>
+          </div>
+          <div>
+            <label>Applies to Contents</label>
+            <select name="applies_to_children">
+              <option value="1">Yes</option>
+              <option value="0">No</option>
+            </select>
+          </div>
+          <div>
+            <label>Coverage (Children)</label>
+            <select name="children_coverage_definition_id" id="lp_child_cov"><option value="">--</option></select>
+          </div>
+          <div class="col-12"><button class="btn" type="submit">Link/Update</button></div>
+        </form>
         <?php if (!$policies): ?>
           <div class="small muted">No direct policy links. Policies can also inherit from parents.</div>
         <?php else: ?>
           <table>
-            <thead><tr><th>Policy #</th><th>Insurer</th><th>Type</th><th>Start</th><th>End</th><th>Premium</th></tr></thead>
+            <thead><tr><th>Policy #</th><th>Insurer</th><th>Coverage</th><th>Limit</th><th>Type</th><th>Start</th><th>End</th><th>Premium</th><th></th></tr></thead>
             <tbody>
               <?php foreach ($policies as $p): ?>
                 <tr>
                   <td><a href="<?= Util::baseUrl('index.php?page=policy_edit&id='.(int)$p['id']) ?>"><?= Util::h($p['policy_number']) ?></a></td>
                   <td><?= Util::h($p['insurer']) ?></td>
+                  <td><?= Util::h($p['cov_name'] ?? '-') ?></td>
+                  <td><?= isset($p['limit_amount']) ? ('$'.number_format($p['limit_amount'],2)) : '-' ?></td>
                   <td><?= Util::h($p['policy_type']) ?></td>
                   <td><?= Util::h($p['start_date']) ?></td>
                   <td><?= Util::h($p['end_date']) ?></td>
                   <td>$<?= number_format($p['premium'],2) ?></td>
+                  <td>
+                    <form method="post" onsubmit="return confirmAction('Unlink policy?')">
+                      <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                      <input type="hidden" name="action" value="unlink_policy">
+                      <input type="hidden" name="policy_id" value="<?= (int)$p['id'] ?>">
+                      <button class="btn ghost danger">Unlink</button>
+                    </form>
+                  </td>
                 </tr>
               <?php endforeach; ?>
             </tbody>
@@ -555,7 +625,23 @@ if ($isEdit) {
       };
     });
   })();
- </script>
+  // Populate coverage selects for policy linking
+  (function(){
+    var covMap = <?= json_encode($pcMap ?? []) ?>;
+    function fill(sel, arr, includeEmpty){
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      if (includeEmpty){ var o=document.createElement('option'); o.value=''; o.textContent='--'; sel.appendChild(o); }
+      (arr||[]).forEach(function(c){ var o=document.createElement('option'); o.value=c.id; o.textContent=c.name; sel.appendChild(o); });
+    }
+    var pSel = document.getElementById('lp_policy');
+    if (pSel){
+      var aSel = document.getElementById('lp_cov');
+      var cSel = document.getElementById('lp_child_cov');
+      function apply(){ var pid = parseInt(pSel.value,10); fill(aSel, covMap[pid]||[], false); fill(cSel, covMap[pid]||[], true); }
+      pSel.addEventListener('change', apply); apply();
+    }
+  })();
+</script>
   </div>
   </div>
   <div class="col-4">
