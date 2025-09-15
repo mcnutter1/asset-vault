@@ -1,6 +1,18 @@
 <?php
 require_once __DIR__ . '/../lib/Util.php';
 require_once __DIR__ . '/../lib/Database.php';
+
+require_once __DIR__.'/auth.php';
+
+// Handle SSO callback if arriving from login
+handle_sso_callback();
+
+// Ensure we are authenticated, otherwise redirect to SSO
+$auth = ensure_authenticated();
+ensure_role(['vault']);
+$identity = $auth['identity'];
+$roles = $auth['roles'];
+
 // Start output buffering to avoid 'headers already sent' when pages echo before redirect
 if (ob_get_level() === 0) { ob_start(); }
 
