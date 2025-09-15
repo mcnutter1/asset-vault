@@ -12,7 +12,12 @@ class PropertyScraper
             CURLOPT_HTTPHEADER => [
                 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
                 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language: en-US,en;q=0.9',
+                'Cache-Control: no-cache',
+                'Pragma: no-cache',
+                'Connection: keep-alive',
             ],
+            CURLOPT_ENCODING => '',
         ]);
         $body = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -33,6 +38,27 @@ class PropertyScraper
     private static function parseZillowDetail(string $html): array
     {
         $facts = [];
+        // Try embedded Next.js data
+        if (preg_match('/<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/is', $html, $m)) {
+            $json = trim($m[1]);
+            $data = json_decode($json, true);
+            if (is_array($data)) {
+                $walker = function($node, callable $visit) use (&$walker) {
+                    if (is_array($node)) { $visit($node); foreach ($node as $v) { $walker($v, $visit); } }
+                };
+                $walker($data, function($n) use (&$facts){
+                    foreach (['zestimate','homeZestimate'] as $k) if (isset($n[$k]) && is_numeric($n[$k])) $facts['zestimate_usd'] = (float)$n[$k];
+                    foreach (['livingArea','finishedSqFt','floorSize'] as $k) if (isset($n[$k]) && is_numeric($n[$k])) $facts['sq_ft'] = (int)$n[$k];
+                    if (isset($n['bedrooms']) && is_numeric($n['bedrooms'])) $facts['beds'] = (float)$n['bedrooms'];
+                    if (isset($n['bathrooms']) && is_numeric($n['bathrooms'])) $facts['baths'] = (float)$n['bathrooms'];
+                    if (isset($n['yearBuilt']) && is_numeric($n['yearBuilt'])) $facts['year_built'] = (int)$n['yearBuilt'];
+                    if (isset($n['lotAreaValue']) && is_numeric($n['lotAreaValue'])) {
+                        $val = (float)$n['lotAreaValue']; $unit = strtolower((string)($n['lotAreaUnits'] ?? 'acres'));
+                        $facts['lot_size_acres'] = $unit === 'acres' ? $val : ($unit === 'sqft' ? $val/43560.0 : null);
+                    }
+                });
+            }
+        }
         if (preg_match('/Zestimate[^$]*\$([0-9,]+)/i', $html, $m)) {
             $facts['zestimate_usd'] = (float)str_replace(',', '', $m[1]);
         }
@@ -68,9 +94,20 @@ class PropertyScraper
     {
         $facts = [];
         $targetUrl = $directUrl;
+        // Validate provided Zillow homedetails URL
+        if ($targetUrl) {
+            $p = parse_url($targetUrl);
+            $host = strtolower($p['host'] ?? '');
+            $path = $p['path'] ?? '';
+            if (!preg_match('/(^|\.)zillow\.com$/', $host) || stripos($path, '/homedetails/') === false) {
+                $targetUrl = null;
+            } else {
+                $targetUrl = 'https://www.zillow.com' . $path; // strip params
+            }
+        }
         if (!$targetUrl) {
             $q = urlencode(self::buildSearchQuery($house));
-            $searchUrl = "https://www.zillow.com/homes/$q";
+            $searchUrl = "https://www.zillow.com/homes/$q_rb/";
             $html = self::fetch($searchUrl);
             if ($html) {
                 if (preg_match('/https:\/\/www\.zillow\.com\/homedetails\/[A-Za-z0-9\-_,.%]+/i', $html, $m)) {
