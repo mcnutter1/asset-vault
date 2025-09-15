@@ -9,7 +9,7 @@ handle_sso_callback();
 
 // Ensure we are authenticated, otherwise redirect to SSO
 $auth = ensure_authenticated();
-ensure_role(['vault','admin']);
+#ensure_role(['vault','admin']);
 $identity = $auth['identity'];
 $roles = $auth['roles'];
 
