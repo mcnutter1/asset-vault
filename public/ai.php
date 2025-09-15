@@ -83,12 +83,14 @@ try {
               'assumptions' => implode(' ', $assump),
               'confidence' => 'high',
               'sources' => $sourceUrls,
-            ]
+            ],
+            'facts' => $facts,
           ];
         } else {
           // No facts found; run AI estimation using exact address
           $result = ValueEstimators::valueHouse($ai, $house, $facts);
           $result['notice'] = 'facts_missing';
+          $result['facts'] = $facts;
         }
         json_out(['ok'=>true,'type'=>'house','data'=>$result]);
       } elseif (strpos($category, 'elect') !== false) {

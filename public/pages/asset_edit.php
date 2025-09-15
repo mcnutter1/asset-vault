@@ -365,11 +365,19 @@ if ($isEdit) {
     <div class="head"><strong>AI Valuation</strong><button class="x" data-modal-close="aiModal">✕</button></div>
     <div class="body">
       <div class="row" style="margin-bottom:8px">
-        <div class="col-12"><label>Zillow URL (optional)</label><input id="ai_zillow_url" placeholder="https://www.zillow.com/homedetails/..."/></div>
-        <div class="col-12 actions"><button class="btn" id="aiRun" type="button">Fetch & Estimate</button></div>
+        <div class="col-12 actions"><button class="btn" id="aiRun" type="button">Estimate (Zillow First)</button></div>
       </div>
       <div id="aiLoading" style="display:none;align-items:center;gap:8px"><div class="spinner"></div><div>Fetching sources and contacting AI…</div></div>
       <div id="aiResult" style="display:none">
+        <div class="row">
+          <div class="col-12"><h3>Parsed Facts</h3></div>
+          <div class="col-6"><label>Zestimate</label><input id="fact_zestimate" readonly></div>
+          <div class="col-6"><label>Square Feet</label><input id="fact_sqft" readonly></div>
+          <div class="col-4"><label>Beds</label><input id="fact_beds" readonly></div>
+          <div class="col-4"><label>Baths</label><input id="fact_baths" readonly></div>
+          <div class="col-4"><label>Year Built</label><input id="fact_year" readonly></div>
+          <div class="col-12"><label>Zillow Link</label><input id="fact_url" readonly></div>
+        </div>
         <div class="row">
           <div class="col-6"><label>Market Value (USD)</label><input id="ai_market" type="number" step="0.01"></div>
           <div class="col-6"><label>Replacement Cost (USD)</label><input id="ai_replace" type="number" step="0.01"></div>
@@ -481,12 +489,18 @@ if ($isEdit) {
         var errorEl = document.getElementById('aiError');
         var applyBtn = document.getElementById('aiApply');
         loading.style.display='flex'; result.style.display='none'; errorEl.style.display='none'; applyBtn.style.display='none';
-        var zurl = document.getElementById('ai_zillow_url').value || '';
         fetch('<?= Util::baseUrl('ai.php') ?>', {
           method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>', zillow_url: zurl })
+          body: new URLSearchParams({ action:'estimate', asset_id:'<?= (int)$id ?>', csrf:'<?= Util::csrfToken() ?>' })
         }).then(r=>r.json()).then(data=>{
           if (!data.ok) throw new Error(data.error||'Failed');
+          var facts = data.data.facts || {};
+          document.getElementById('fact_zestimate').value = (facts.zestimate_usd? ('$'+Number(facts.zestimate_usd).toLocaleString()):'');
+          document.getElementById('fact_sqft').value = facts.sq_ft? Number(facts.sq_ft).toLocaleString():'';
+          document.getElementById('fact_beds').value = facts.beds??'';
+          document.getElementById('fact_baths').value = facts.baths??'';
+          document.getElementById('fact_year').value = facts.year_built??'';
+          document.getElementById('fact_url').value = facts.zillow_url??'';
           var val = data.data.valuation || {};
           document.getElementById('ai_market').value = val.market_value_usd ?? '';
           document.getElementById('ai_replace').value = val.replacement_cost_usd ?? '';
