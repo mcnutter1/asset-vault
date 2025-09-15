@@ -36,11 +36,16 @@ try {
         $addrStmt->execute([$assetId]);
         $addr = $addrStmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $address1 = trim(($addr['line1'] ?? '') . ' ' . ($addr['line2'] ?? ''));
+        $fullAddress = trim($address1 . ', ' . ($addr['city'] ?? '') . ', ' . ($addr['state'] ?? '') . ' ' . ($addr['postal_code'] ?? ''));
         $house = [
           'address' => $address1,
+          'address_full' => $fullAddress,
           'city' => $addr['city'] ?? '',
           'state' => $addr['state'] ?? '',
           'zip' => $addr['postal_code'] ?? '',
+          'country' => $addr['country'] ?? '',
+          'latitude' => isset($addr['latitude']) ? (float)$addr['latitude'] : null,
+          'longitude' => isset($addr['longitude']) ? (float)$addr['longitude'] : null,
           'sq_ft' => null,
           'lot_size_acres' => null,
           'year_built' => $asset['year'] ?? null,
