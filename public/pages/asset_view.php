@@ -15,7 +15,7 @@ if (!$asset) { http_response_code(404); echo '<div class="card"><h1>Not Found</h
 
 // Photos
 $photos = [];
-$stmt = $pdo->prepare("SELECT id, filename FROM files WHERE entity_type='asset' AND entity_id=? AND mime_type LIKE 'image/%' ORDER BY uploaded_at DESC");
+$stmt = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='asset' AND entity_id=? AND is_trashed=0 AND mime_type LIKE 'image/%' ORDER BY uploaded_at DESC");
 $stmt->execute([(int)$asset['id']]);
 $photos = $stmt->fetchAll();
 
@@ -260,9 +260,9 @@ if ($policies) {
     <?php if ($photos): ?>
       <div class="mini-gallery" style="margin-top:12px;">
         <div class="small muted" style="margin:0 0 6px; font-weight:600;letter-spacing:.5px;text-transform:uppercase;">Photos</div>
-        <div class="gallery" style="margin-top:0; grid-template-columns:repeat(auto-fit,minmax(90px,1fr));">
+        <div class="gallery" style="margin-top:0; grid-template-columns:repeat(auto-fit,minmax(110px,1fr));">
           <?php foreach ($photos as $ph): ?>
-            <img src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
+            <img data-file-id="<?= (int)$ph['id'] ?>" data-filename="<?= Util::h($ph['filename']) ?>" data-size="<?= (int)$ph['size'] ?>" data-uploaded="<?= Util::h($ph['uploaded_at']) ?>" src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
           <?php endforeach; ?>
         </div>
       </div>

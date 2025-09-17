@@ -184,17 +184,17 @@ if ($isEdit && (($_POST['action'] ?? '') === 'upload_file')) {
   }
   Util::redirect('index.php?page=policy_edit&id='.$id);
 }
-if ($isEdit && (($_POST['action'] ?? '') === 'delete_file')) {
+if ($isEdit && (($_POST['action'] ?? '') === 'trash_file')) {
   Util::checkCsrf();
   $fid = (int)($_POST['file_id'] ?? 0);
-  $pdo->prepare("DELETE FROM files WHERE id=? AND entity_type='policy' AND entity_id=?")->execute([$fid, $id]);
+  $pdo->prepare("UPDATE files SET is_trashed=1, trashed_at=NOW() WHERE id=? AND entity_type='policy' AND entity_id=?")->execute([$fid, $id]);
   Util::redirect('index.php?page=policy_edit&id='.$id);
 }
 
 // Load policy files
 $policyFiles = [];
 if ($isEdit) {
-  $stmt = $pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at FROM files WHERE entity_type='policy' AND entity_id=? ORDER BY uploaded_at DESC");
+  $stmt = $pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at FROM files WHERE entity_type='policy' AND entity_id=? AND is_trashed=0 ORDER BY uploaded_at DESC");
   $stmt->execute([$id]);
   $policyFiles = $stmt->fetchAll();
 }
@@ -368,16 +368,16 @@ if ($isEdit) {
           <tbody>
             <?php foreach ($policyFiles as $f): ?>
               <tr>
-                <td><a href="<?= Util::baseUrl('file.php?id='.(int)$f['id'].'&download=1') ?>"><?= Util::h($f['filename']) ?></a></td>
+                <td><a href="<?= Util::baseUrl('file.php?id='.(int)$f['id'].'&download=1') ?>" data-file-id="<?= (int)$f['id'] ?>" data-filename="<?= Util::h($f['filename']) ?>" data-size="<?= (int)$f['size'] ?>" data-uploaded="<?= Util::h($f['uploaded_at']) ?>"><?= Util::h($f['filename']) ?></a></td>
                 <td><?= Util::h($f['mime_type']) ?></td>
                 <td><?= number_format((int)$f['size']) ?> bytes</td>
                 <td><?= Util::h($f['uploaded_at']) ?></td>
                 <td>
-                  <form method="post" onsubmit="return confirmAction('Delete document?')">
+                  <form method="post" onsubmit="return confirmAction('Move document to Trash?')">
                     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-                    <input type="hidden" name="action" value="delete_file">
+                    <input type="hidden" name="action" value="trash_file">
                     <input type="hidden" name="file_id" value="<?= (int)$f['id'] ?>">
-                    <button class="btn sm ghost danger">Delete</button>
+                    <button class="btn sm ghost danger">Trash</button>
                   </form>
                 </td>
               </tr>

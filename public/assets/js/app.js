@@ -97,6 +97,8 @@ function initDOM(){
       if (el) el.classList.remove('show');
     });
   });
+  initImagePreviewModal();
+  initFileActions();
   initPhotoModal();
   initNavToggle();
 }
@@ -195,7 +197,13 @@ function initPhotoModal(){
             if (empty) empty.style.display='none';
             if (gal && gal.style.display==='none') gal.style.display='grid';
             files.forEach(f=>{
-              if (gal) { const im = document.createElement('img'); im.src = f.url; im.alt = f.filename; gal.appendChild(im); }
+              if (gal) {
+                const wrap = document.createElement('div'); wrap.className='thumb'; wrap.setAttribute('data-file-wrap','');
+                const del = document.createElement('button'); del.className='thumb-trash'; del.type='button'; del.title='Move to Trash'; del.setAttribute('data-file-trash',''); del.setAttribute('data-file-id', f.id);
+                del.textContent = '🗑️';
+                const im = document.createElement('img'); im.setAttribute('data-file-id', f.id); im.setAttribute('data-filename', f.filename||''); im.setAttribute('data-size', f.size||''); im.setAttribute('data-uploaded',''); im.src = f.url; im.alt = f.filename||'';
+                wrap.appendChild(del); wrap.appendChild(im); gal.appendChild(wrap);
+              }
             });
             item.prog = 100; item.done = true; item.error=''; renderQueue();
             resolve();
@@ -221,6 +229,55 @@ function initPhotoModal(){
     setStatus('All uploads processed.');
     upBtn.disabled = true;
     toast('Photos uploaded');
+  });
+}
+
+// Global image preview modal for any element with data-file-id
+function initImagePreviewModal(){
+  const modal = document.getElementById('imgModal');
+  if (!modal) return;
+  const img = document.getElementById('im_img');
+  const title = document.getElementById('im_title');
+  const meta = document.getElementById('im_meta');
+  document.addEventListener('click', function(e){
+    const el = e.target.closest('[data-file-id]');
+    if (!el) return;
+    if (el.tagName === 'A') { e.preventDefault(); }
+    const id = el.getAttribute('data-file-id');
+    const name = el.getAttribute('data-filename') || 'File';
+    const size = el.getAttribute('data-size') || '';
+    const uploaded = el.getAttribute('data-uploaded') || '';
+    title.textContent = name;
+    img.src = (document.querySelector('base')?.href||'') + 'file.php?id=' + encodeURIComponent(id);
+    meta.textContent = (size? prettySize(parseInt(size,10))+' • ' : '') + (uploaded || '');
+    modal.classList.add('show');
+  });
+}
+
+// File actions: trash/restore/delete via AJAX
+function initFileActions(){
+  document.addEventListener('click', function(e){
+    const btn = e.target.closest('[data-file-trash],[data-file-restore],[data-file-delete]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-file-id');
+    const action = btn.hasAttribute('data-file-trash') ? 'trash' : (btn.hasAttribute('data-file-restore') ? 'restore' : 'delete');
+    if (action === 'delete' && !confirm('Permanently delete this file? This cannot be undone.')) return;
+    if (action === 'trash' && !confirm('Move this file to Trash?')) return;
+    const form = new FormData();
+    var csrfEl = document.querySelector('input[name="csrf"]');
+    form.append('csrf', csrfEl ? csrfEl.value : '');
+    form.append('file_id', id);
+    form.append('action', action);
+    fetch((document.querySelector('base')?.href||'') + 'file_action.php', { method:'POST', body: form, headers:{'X-Requested-With':'XMLHttpRequest'} })
+      .then(r=>r.json()).then(j=>{
+        if (!j.ok) throw new Error(j.error||'Action failed');
+        // Remove thumbnail if present
+        const wrap = btn.closest('[data-file-wrap]');
+        if (wrap) wrap.remove();
+        toast('Done');
+      }).catch(err=>{
+        toast(err.message||'Error');
+      });
   });
 }
 

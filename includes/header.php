@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../lib/Util.php';
+require_once __DIR__ . '/../lib/Database.php';
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 $cfg = Util::config();
 $base = rtrim($cfg['app']['base_url'], '/');
@@ -15,6 +16,23 @@ $page = $_GET['page'] ?? 'dashboard';
   <link rel="icon" href="data:,">
 </head>
 <body>
+  <?php
+  // Ensure trash columns exist on files table (idempotent, cheap)
+  if (!function_exists('av_ensure_files_trash')) {
+    function av_ensure_files_trash(){
+      try {
+        $pdo = Database::get();
+        $col = $pdo->query("SHOW COLUMNS FROM files LIKE 'is_trashed'")->fetch();
+        if (!$col) {
+          $pdo->exec("ALTER TABLE files ADD COLUMN is_trashed TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN trashed_at TIMESTAMP NULL DEFAULT NULL");
+        }
+      } catch (Throwable $e) {
+        // ignore; schema may be read-only — features will degrade gracefully
+      }
+    }
+  }
+  av_ensure_files_trash();
+  ?>
   <div class="app-bar">
     <div class="inner">
       <div class="brand">Asset Vault</div>

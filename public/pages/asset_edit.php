@@ -278,7 +278,7 @@ if ($values) {
 // Files (images) for this asset from DB
 $photos = [];
 if ($isEdit) {
-  $stmt = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='asset' AND entity_id=? AND mime_type LIKE 'image/%' ORDER BY uploaded_at DESC");
+  $stmt = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='asset' AND entity_id=? AND is_trashed=0 AND mime_type LIKE 'image/%' ORDER BY uploaded_at DESC");
   $stmt->execute([$id]);
   $photos = $stmt->fetchAll();
 }
@@ -531,14 +531,17 @@ if ($isEdit) {
           <input type="file" name="photos[]" accept="image/*" multiple style="display:none" aria-hidden="true">
         </div>
         <?php if ($photos): ?>
-          <div class="gallery" id="photoGallery" style="margin-top:8px; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));">
+          <div class="gallery" id="photoGallery" style="margin-top:8px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
             <?php foreach ($photos as $ph): ?>
-              <img src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
+              <div class="thumb" data-file-wrap>
+                <button class="thumb-trash" type="button" title="Move to Trash" data-file-trash data-file-id="<?= (int)$ph['id'] ?>">🗑️</button>
+                <img data-file-id="<?= (int)$ph['id'] ?>" data-filename="<?= Util::h($ph['filename']) ?>" data-size="<?= (int)$ph['size'] ?>" data-uploaded="<?= Util::h($ph['uploaded_at']) ?>" src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
+              </div>
             <?php endforeach; ?>
           </div>
         <?php else: ?>
           <div class="small muted" id="photoEmpty">No photos yet. Add some to document the asset.</div>
-          <div class="gallery" id="photoGallery" style="margin-top:8px; display:none; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));"></div>
+          <div class="gallery" id="photoGallery" style="margin-top:8px; display:none; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"></div>
         <?php endif; ?>
       </div>
 

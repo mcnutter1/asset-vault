@@ -33,6 +33,7 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
         <a class="<?= $tab==='general'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=general') ?>">General</a>
         <a class="<?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
         <a class="<?= $tab==='addresses'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=addresses') ?>">Addresses</a>
+        <a class="<?= $tab==='trash'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=trash') ?>">Trash</a>
       </div>
     </nav>
   </aside>
@@ -81,6 +82,55 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
       <section class="settings-card">
         <h1>Saved Addresses</h1>
         <?php include __DIR__ . '/saved_addresses.php'; ?>
+      </section>
+    <?php elseif ($tab==='trash'): ?>
+      <section class="settings-card">
+        <h1>Trash</h1>
+        <?php
+          $pdo = Database::get();
+          if (($_POST['action'] ?? '') === 'restore_file') { Util::checkCsrf(); $fid=(int)($_POST['file_id']??0); $pdo->prepare('UPDATE files SET is_trashed=0, trashed_at=NULL WHERE id=?')->execute([$fid]); echo '<div class="small">Restored.</div>'; }
+          if (($_POST['action'] ?? '') === 'delete_file') { Util::checkCsrf(); $fid=(int)($_POST['file_id']??0); $pdo->prepare('DELETE FROM files WHERE id=?')->execute([$fid]); echo '<div class="small">Deleted permanently.</div>'; }
+          $trashed = $pdo->query("SELECT id, entity_type, entity_id, filename, mime_type, size, uploaded_at, trashed_at FROM files WHERE is_trashed=1 ORDER BY trashed_at DESC")->fetchAll();
+        ?>
+        <?php if (!$trashed): ?>
+          <div class="small muted">Trash is empty.</div>
+        <?php else: ?>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Preview</th><th>Name</th><th>Type</th><th>Size</th><th>Trashed</th><th>Linked To</th><th></th></tr></thead>
+            <tbody>
+              <?php foreach ($trashed as $t): ?>
+                <tr>
+                  <td>
+                    <?php if (strpos($t['mime_type'],'image/')===0): ?>
+                      <img data-file-id="<?= (int)$t['id'] ?>" data-filename="<?= Util::h($t['filename']) ?>" data-size="<?= (int)$t['size'] ?>" data-uploaded="<?= Util::h($t['uploaded_at']) ?>" src="<?= Util::baseUrl('file.php?id='.(int)$t['id']) ?>" alt="" style="width:60px; height:60px; object-fit:cover; border-radius:8px; border:1px solid var(--border);">
+                    <?php else: ?>
+                      —
+                    <?php endif; ?>
+                  </td>
+                  <td><?= Util::h($t['filename']) ?></td>
+                  <td><?= Util::h($t['mime_type']) ?></td>
+                  <td><?= number_format((int)$t['size']) ?> bytes</td>
+                  <td><?= Util::h($t['trashed_at']) ?></td>
+                  <td><?= Util::h($t['entity_type']) ?> #<?= (int)$t['entity_id'] ?></td>
+                  <td class="actions">
+                    <form method="post">
+                      <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                      <input type="hidden" name="action" value="restore_file">
+                      <input type="hidden" name="file_id" value="<?= (int)$t['id'] ?>">
+                      <button class="btn sm">Restore</button>
+                    </form>
+                    <form method="post" onsubmit="return confirmAction('Permanently delete this file? This cannot be undone.')">
+                      <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                      <input type="hidden" name="action" value="delete_file">
+                      <input type="hidden" name="file_id" value="<?= (int)$t['id'] ?>">
+                      <button class="btn sm danger">Delete</button>
+                    </form>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table></div>
+        <?php endif; ?>
       </section>
     <?php else: ?>
       <section class="settings-card"><h1>Unknown Settings</h1></section>
