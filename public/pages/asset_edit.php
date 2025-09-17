@@ -251,6 +251,21 @@ if (($_POST['action'] ?? '') === 'save') {
     }
   }
 
+  // Save dynamic custom properties for the selected category
+  if (!empty($category_id)) {
+    $stmt = $pdo->prepare('SELECT id, input_type FROM asset_property_defs WHERE is_active=1 AND category_id=?');
+    $stmt->execute([$category_id]);
+    $defs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($defs as $d) {
+      $pid = (int)$d['id'];
+      $type = $d['input_type'];
+      $field = 'prop_'.$pid;
+      $val = ($type === 'checkbox') ? (isset($_POST[$field]) ? '1' : '0') : trim($_POST[$field] ?? '');
+      $ins = $pdo->prepare('INSERT INTO asset_property_values(asset_id, property_def_id, value_text) VALUES (?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text)');
+      $ins->execute([$id, $pid, $val]);
+    }
+  }
+
   Util::redirect('index.php?page=asset_edit&id='.$id);
 }
 
