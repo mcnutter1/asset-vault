@@ -114,11 +114,11 @@ flattenRows(0, $byParent, 0, $flat);
     <h1>Assets</h1>
     <a class="btn sm" href="<?= Util::baseUrl('index.php?page=asset_edit') ?>">Add Asset</a>
   </div>
-  <form method="get" class="row" style="margin-bottom:8px">
+  <form method="get" id="assetsFilter" class="row" style="margin-bottom:8px">
     <input type="hidden" name="page" value="assets">
     <div class="col-4">
       <label>Search</label>
-      <input name="q" value="<?= Util::h($q) ?>" placeholder="Name contains…">
+      <input id="assets_q" name="q" value="<?= Util::h($q) ?>" placeholder="Name contains…">
     </div>
     <div class="col-3">
       <label>Category</label>
@@ -142,7 +142,7 @@ flattenRows(0, $byParent, 0, $flat);
       <label>&nbsp;</label>
       <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="incomplete" value="1" <?= $incompleteOnly?'checked':'' ?>> Incomplete only</label>
     </div>
-    <div class="col-12 actions"><button class="btn sm" type="submit">Apply</button><a class="btn sm ghost" href="<?= Util::baseUrl('index.php?page=assets') ?>">Reset</a></div>
+    <div class="col-12 actions"><a class="btn sm ghost" href="<?= Util::baseUrl('index.php?page=assets') ?>">Reset</a></div>
   </form>
   <div class="table-wrap">
   <table>
@@ -171,7 +171,11 @@ flattenRows(0, $byParent, 0, $flat);
         <tr>
           <td>
             <div style="padding-left: <?= (int)$row['depth']*16 ?>px">
-              <?= Util::h($row['name']) ?>
+              <?php if (!empty($row['public_token'])): $viewUrl = Util::baseUrl('index.php?page=asset_view&code='.$row['public_token']); ?>
+                <a href="<?= $viewUrl ?>" target="_blank"><?= Util::h($row['name']) ?></a>
+              <?php else: ?>
+                <?= Util::h($row['name']) ?>
+              <?php endif; ?>
             </div>
           </td>
           <td><?= Util::h($row['category']) ?></td>
@@ -187,23 +191,7 @@ flattenRows(0, $byParent, 0, $flat);
           <td>$<?= number_format($t['contents'], 2) ?></td>
           <td><strong>$<?= number_format($t['total'], 2) ?></strong></td>
           <td class="actions">
-            <a class="btn sm ghost" href="<?= Util::baseUrl('index.php?page=asset_edit&id='.(int)$row['id']) ?>">Edit</a>
-            <?php if (!empty($row['public_token'])): $viewUrl = Util::baseUrl('index.php?page=asset_view&code='.$row['public_token']); ?>
-              <a class="btn sm ghost" href="<?= $viewUrl ?>" target="_blank">View</a>
-            <?php else: ?>
-              <form method="post" style="display:inline" onsubmit="return confirmAction('Create public link for this asset?')">
-                <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-                <input type="hidden" name="action" value="gen_token">
-                <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
-                <button class="btn sm ghost" type="submit">Create Link</button>
-              </form>
-            <?php endif; ?>
-            <form method="post" style="display:inline" onsubmit="return confirmAction('Delete asset?')">
-              <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-              <input type="hidden" name="action" value="delete">
-              <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
-              <button class="btn sm ghost danger" type="submit">Delete</button>
-            </form>
+            <a class="btn sm ghost" title="Edit" href="<?= Util::baseUrl('index.php?page=asset_edit&id='.(int)$row['id']) ?>">✏️</a>
           </td>
         </tr>
       <?php endforeach; ?>

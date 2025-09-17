@@ -100,6 +100,7 @@ function initDOM(){
   initImagePreviewModal();
   initFileActions();
   initPhotoModal();
+  initAssetsFilter();
   initNavToggle();
 }
 
@@ -230,6 +231,26 @@ function initPhotoModal(){
     upBtn.disabled = true;
     toast('Photos uploaded');
   });
+}
+
+// Auto-submit filters on the Assets list (debounced for search)
+function initAssetsFilter(){
+  var form = document.getElementById('assetsFilter');
+  if (!form) return;
+  var timer = null;
+  function submitSoon(){
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function(){ form.submit(); }, 300);
+  }
+  // Change events submit immediately (selects, checkboxes)
+  form.addEventListener('change', function(e){
+    if (e.target && e.target.tagName !== 'INPUT') { form.submit(); return; }
+    // Checkboxes submit immediately
+    if (e.target && e.target.type === 'checkbox') { form.submit(); }
+  });
+  // Search input debounced
+  var q = document.getElementById('assets_q');
+  if (q) { q.addEventListener('input', submitSoon); }
 }
 
 // Global image preview modal for any element with data-file-id

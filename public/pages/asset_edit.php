@@ -97,6 +97,17 @@ if (!function_exists('av_normalize_upload_image')) {
   }
 }
 
+// Delete asset
+if (($_POST['action'] ?? '') === 'delete_asset') {
+  Util::checkCsrf();
+  $did = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+  if ($did > 0) {
+    $pdo->prepare('UPDATE assets SET is_deleted=1 WHERE id=?')->execute([$did]);
+    $pdo->prepare('INSERT INTO audit_log(entity_type, entity_id, action, details) VALUES ("asset", ?, "delete", NULL)')->execute([$did]);
+  }
+  Util::redirect('index.php?page=assets');
+}
+
 // Save asset
 if (($_POST['action'] ?? '') === 'save') {
   Util::checkCsrf();
@@ -363,7 +374,7 @@ if ($isEdit) {
     <h1><?= $isEdit ? 'Edit Asset' : 'Add Asset' ?></h1>
     <a class="btn ghost" href="<?= Util::baseUrl('index.php?page=assets') ?>">Back</a>
   </div>
-  <form method="post" enctype="multipart/form-data">
+  <form method="post" enctype="multipart/form-data" id="assetForm">
     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
     <input type="hidden" name="action" value="save">
   <div class="row">
@@ -830,6 +841,18 @@ if ($isEdit) {
       <?php else: ?>
         <div class="small muted">Save the asset first to configure locations and public link.</div>
       <?php endif; ?>
+      <hr class="divider">
+      <div class="actions" style="justify-content: space-between;">
+        <button class="btn" type="button" onclick="document.getElementById('assetForm').submit()">Save</button>
+        <?php if ($isEdit): ?>
+        <form method="post" onsubmit="return confirmAction('Delete this asset? This will move it to trash (soft delete).')">
+          <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+          <input type="hidden" name="action" value="delete_asset">
+          <input type="hidden" name="id" value="<?= (int)$id ?>">
+          <button class="btn danger">Delete</button>
+        </form>
+        <?php endif; ?>
+      </div>
     </div>
   </div>
 </div>
