@@ -105,6 +105,72 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_asset_properties();
+  // Ensure People-related schema (and files enum includes 'person')
+  if (!function_exists('av_ensure_people')) {
+    function av_ensure_people(){
+      try {
+        $pdo = Database::get();
+        // files.entity_type add 'person'
+        try { $pdo->exec("ALTER TABLE files MODIFY COLUMN entity_type ENUM('asset','policy','person') NOT NULL"); } catch (Throwable $e) { /* ignore if already done */ }
+        // person_contacts
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_contacts (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          person_id INT NOT NULL,
+          contact_type ENUM('phone','email','other') NOT NULL DEFAULT 'phone',
+          label VARCHAR(50) NULL,
+          contact_value VARCHAR(200) NOT NULL,
+          is_primary TINYINT(1) NOT NULL DEFAULT 0,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_pc_person (person_id),
+          CONSTRAINT fk_pc_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // person_socials
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_socials (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          person_id INT NOT NULL,
+          platform ENUM('twitter','instagram','facebook','linkedin','tiktok','website','other') NOT NULL DEFAULT 'other',
+          handle_or_url VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_ps_person (person_id),
+          CONSTRAINT fk_ps_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // person_private
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_private (
+          person_id INT PRIMARY KEY,
+          ssn VARCHAR(32) NULL,
+          driver_license VARCHAR(64) NULL,
+          passport_number VARCHAR(64) NULL,
+          medical_notes TEXT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          CONSTRAINT fk_pp_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // person_assets
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_assets (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          person_id INT NOT NULL,
+          asset_id INT NOT NULL,
+          role ENUM('owner','user','resident','other') NOT NULL DEFAULT 'other',
+          UNIQUE KEY uniq_person_asset (person_id, asset_id, role),
+          CONSTRAINT fk_pa_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+          CONSTRAINT fk_pa_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // person_relations
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_relations (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          person_id INT NOT NULL,
+          related_person_id INT NOT NULL,
+          relation ENUM('spouse','child','parent','sibling','partner','other') NOT NULL DEFAULT 'other',
+          UNIQUE KEY uniq_relation (person_id, related_person_id, relation),
+          CONSTRAINT fk_pr_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+          CONSTRAINT fk_pr_related FOREIGN KEY (related_person_id) REFERENCES people(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Add gender column to people if missing
+        $col = $pdo->query("SHOW COLUMNS FROM people LIKE 'gender'")->fetch();
+        if (!$col) { $pdo->exec("ALTER TABLE people ADD COLUMN gender ENUM('male','female','nonbinary','other','prefer_not') NULL AFTER last_name"); }
+      } catch (Throwable $e) { /* ignore */ }
+    }
+  }
+  av_ensure_people();
   ?>
   <div class="app-bar">
     <div class="inner">
@@ -116,6 +182,7 @@ $page = $_GET['page'] ?? 'dashboard';
         <nav class="nav">
           <a href="<?= Util::baseUrl('index.php?page=dashboard') ?>" class="<?= $page==='dashboard'?'active':'' ?>">Dashboard</a>
           <a href="<?= Util::baseUrl('index.php?page=assets') ?>" class="<?= $page==='assets'?'active':'' ?>">Assets</a>
+          <a href="<?= Util::baseUrl('index.php?page=people') ?>" class="<?= $page==='people'?'active':'' ?>">People</a>
           <a href="<?= Util::baseUrl('index.php?page=policies') ?>" class="<?= $page==='policies'?'active':'' ?>">Policies</a>
           <a href="<?= Util::baseUrl('index.php?page=settings') ?>" class="<?= $page==='settings'?'active':'' ?>">Settings</a>
         </nav>

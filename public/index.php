@@ -34,6 +34,15 @@ switch ($page) {
   case 'asset_view':
     include __DIR__ . '/pages/asset_view.php';
     break;
+  case 'people':
+    include __DIR__ . '/pages/people.php';
+    break;
+  case 'person_edit':
+    include __DIR__ . '/pages/person_edit.php';
+    break;
+  case 'person_view':
+    include __DIR__ . '/pages/person_view.php';
+    break;
   case 'policies':
     include __DIR__ . '/pages/policies.php';
     break;
