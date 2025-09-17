@@ -8,6 +8,93 @@ $isEdit = $id > 0;
 $cats = $pdo->query('SELECT id, name FROM asset_categories ORDER BY name')->fetchAll();
 $parents = $pdo->query('SELECT id, name FROM assets WHERE is_deleted=0 ORDER BY name')->fetchAll();
 
+// Helper to normalize image uploads (HEIC->JPEG, downscale large images, fix orientation)
+if (!function_exists('av_normalize_upload_image')) {
+  function av_normalize_upload_image(string $tmp, string $origName, string $mime): array {
+    // Detect real mime from content when possible
+    if (function_exists('finfo_open')) {
+      $fi = finfo_open(FILEINFO_MIME_TYPE);
+      if ($fi) { $det = @finfo_file($fi, $tmp); if ($det) $mime = $det; @finfo_close($fi); }
+    }
+    $outMime = $mime;
+    $outName = $origName;
+    $content = @file_get_contents($tmp);
+    if ($content === false) { return [$content, $outMime, $outName]; }
+
+    // If HEIC/HEIF, try to convert to JPEG via Imagick for broad browser support
+    if (preg_match('~^image/(heic|heif)$~i', (string)$mime)) {
+      if (extension_loaded('imagick')) {
+        try {
+          $img = new Imagick($tmp);
+          if (method_exists($img, 'autoOrient')) { @$img->autoOrient(); }
+          $img->setImageFormat('jpeg');
+          $img->setImageCompressionQuality(85);
+          $content = (string)$img->getImageBlob();
+          $outMime = 'image/jpeg';
+          // Force .jpg extension
+          $outName = preg_replace('/\.(heic|heif)$/i', '.jpg', $origName);
+        } catch (Throwable $e) {
+          // Fall back to original content if conversion fails
+        }
+      }
+      return [$content, $outMime, $outName];
+    }
+
+    // For very large JPEG/PNG/WebP, downscale to reasonable dimensions and re-encode as JPEG
+    $maxDim = 2400; // pixels
+    $maxProcessSize = 8 * 1024 * 1024; // only process if <= 8MB already uploaded
+    if (strlen($content) <= $maxProcessSize && preg_match('~^image/(jpeg|png|webp)$~i', (string)$mime)) {
+      $info = @getimagesize($tmp);
+      if ($info && isset($info[0], $info[1])) {
+        $w = (int)$info[0]; $h = (int)$info[1];
+        $scale = max($w, $h) > $maxDim ? ($maxDim / max($w, $h)) : 1.0;
+        $needsScale = $scale < 0.999;
+        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+        $img = null;
+        // Decode
+        if (stripos($mime, 'jpeg') !== false || $ext === 'jpg' || $ext === 'jpeg') {
+          $img = @imagecreatefromjpeg($tmp);
+          // Orientation fix for JPEG
+          if (function_exists('exif_read_data')) {
+            $exif = @exif_read_data($tmp);
+            if (!empty($exif['Orientation'])) {
+              switch ((int)$exif['Orientation']) {
+                case 3: $img = @imagerotate($img, 180, 0); break;
+                case 6: $img = @imagerotate($img, -90, 0); break;
+                case 8: $img = @imagerotate($img, 90, 0); break;
+              }
+            }
+          }
+        } elseif (stripos($mime, 'png') !== false || $ext === 'png') {
+          $img = @imagecreatefrompng($tmp);
+        } elseif (stripos($mime, 'webp') !== false || $ext === 'webp') {
+          if (function_exists('imagecreatefromwebp')) { $img = @imagecreatefromwebp($tmp); }
+        }
+        if ($img) {
+          if ($needsScale) {
+            $newW = (int)round($w * $scale); $newH = (int)round($h * $scale);
+            $dst = imagecreatetruecolor($newW, $newH);
+            imagecopyresampled($dst, $img, 0, 0, 0, 0, $newW, $newH, $w, $h);
+            imagedestroy($img);
+            $img = $dst;
+          }
+          ob_start();
+          @imagejpeg($img, null, 85);
+          $content2 = ob_get_clean();
+          if ($content2) {
+            $content = $content2;
+            $outMime = 'image/jpeg';
+            if (!preg_match('/\.(jpe?g)$/i', $outName)) { $outName = preg_replace('/\.[^.]*$/', '.jpg', $outName); }
+          }
+          imagedestroy($img);
+        }
+      }
+    }
+
+    return [$content, $outMime, $outName];
+  }
+}
+
 // Save asset
 if (($_POST['action'] ?? '') === 'save') {
   Util::checkCsrf();
@@ -51,22 +138,53 @@ if (($_POST['action'] ?? '') === 'save') {
     }
   }
 
-  // Handle photo uploads (store in DB)
+  // Handle photo uploads (store in DB) with error feedback and normalization
+  $uploadErrors = [];
   if (!empty($_FILES['photos']['name'][0])) {
     for ($i=0; $i<count($_FILES['photos']['name']); $i++) {
-      if ($_FILES['photos']['error'][$i] === UPLOAD_ERR_OK) {
+      $err = (int)($_FILES['photos']['error'][$i] ?? UPLOAD_ERR_NO_FILE);
+      if ($err === UPLOAD_ERR_OK) {
         $tmp = $_FILES['photos']['tmp_name'][$i];
         $orig = $_FILES['photos']['name'][$i];
         $mime = $_FILES['photos']['type'][$i] ?: 'application/octet-stream';
-        $size = (int)$_FILES['photos']['size'][$i];
-        $content = file_get_contents($tmp);
-        $stmt = $pdo->prepare("INSERT INTO files(entity_type, entity_id, filename, mime_type, size, content) VALUES ('asset', ?, ?, ?, ?, ?)");
-        $stmt->bindValue(1, $id, PDO::PARAM_INT);
-        $stmt->bindValue(2, $orig, PDO::PARAM_STR);
-        $stmt->bindValue(3, $mime, PDO::PARAM_STR);
-        $stmt->bindValue(4, $size, PDO::PARAM_INT);
-        $stmt->bindParam(5, $content, PDO::PARAM_LOB);
-        $stmt->execute();
+        // Normalize/convert if needed (HEIC->JPEG, downscale large images)
+        [$content, $outMime, $outName] = av_normalize_upload_image($tmp, $orig, $mime);
+        if ($content !== false && $content !== null) {
+          $size = strlen($content);
+          $stmt = $pdo->prepare("INSERT INTO files(entity_type, entity_id, filename, mime_type, size, content) VALUES ('asset', ?, ?, ?, ?, ?)");
+          $stmt->bindValue(1, $id, PDO::PARAM_INT);
+          $stmt->bindValue(2, $outName, PDO::PARAM_STR);
+          $stmt->bindValue(3, $outMime, PDO::PARAM_STR);
+          $stmt->bindValue(4, $size, PDO::PARAM_INT);
+          $stmt->bindParam(5, $content, PDO::PARAM_LOB);
+          $stmt->execute();
+        } else {
+          $uploadErrors[] = $orig . ' could not be read.';
+        }
+      } else if ($err !== UPLOAD_ERR_NO_FILE) {
+        // Collect user-friendly error
+        $msg = $_FILES['photos']['name'][$i] . ': ';
+        switch ($err) {
+          case UPLOAD_ERR_INI_SIZE:
+          case UPLOAD_ERR_FORM_SIZE:
+            $msg .= 'File is too large for the server limits (upload_max_filesize).';
+            break;
+          case UPLOAD_ERR_PARTIAL:
+            $msg .= 'Upload was interrupted (partial upload).';
+            break;
+          case UPLOAD_ERR_NO_TMP_DIR:
+            $msg .= 'Server missing temp folder.';
+            break;
+          case UPLOAD_ERR_CANT_WRITE:
+            $msg .= 'Failed to write file to disk.';
+            break;
+          case UPLOAD_ERR_EXTENSION:
+            $msg .= 'Upload blocked by a PHP extension.';
+            break;
+          default:
+            $msg .= 'Upload error (code '.$err.').';
+        }
+        $uploadErrors[] = $msg;
       }
     }
   }
@@ -401,6 +519,11 @@ if ($isEdit) {
 
       <div class="col-12">
         <h2>Photos</h2>
+        <?php if (!empty($uploadErrors)): ?>
+          <div class="small" style="color:#dc2626; margin:6px 0 8px;">
+            <?= Util::h(implode("\n", $uploadErrors)) ?>
+          </div>
+        <?php endif; ?>
         <input type="file" name="photos[]" accept="image/*" capture="environment" multiple>
         <?php if ($photos): ?>
           <div class="gallery" style="margin-top:8px">
