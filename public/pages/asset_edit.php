@@ -543,10 +543,7 @@ if ($isEdit) {
             <?= Util::h(implode("\n", $uploadErrors)) ?>
           </div>
         <?php endif; ?>
-        <div class="actions" style="margin-bottom:8px">
-          <button class="btn" type="button" data-modal-open="photoModal">Add Photos</button>
-          <input type="file" name="photos[]" accept="image/*" multiple style="display:none" aria-hidden="true">
-        </div>
+        
         <?php if ($photos): ?>
           <div class="gallery sm" id="photoGallery" style="margin-top:8px;">
             <?php foreach ($photos as $ph): ?>
@@ -747,10 +744,23 @@ if ($isEdit) {
       };
     });
   })();
-  // Populate coverage selects for policy linking
+  // Populate coverage selects for policy linking (with fallback by policy type)
   (function(){
-    // Preload map for modal policy -> coverage options
-    var covMap = <?= json_encode($pcMap ?? []) ?>;
+    var covMap = <?= json_encode($pcMap ?? []) ?>; // policy_id => [{id,name}]
+    var polType = <?= json_encode(array_column($pdo->query('SELECT id, policy_type FROM policies')->fetchAll(PDO::FETCH_ASSOC), 'policy_type', 'id')) ?>;
+    <?php
+      $defs = $pdo->query('SELECT id, name, applicable_types FROM coverage_definitions ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
+      $byType = [];
+      $all = [];
+      foreach ($defs as $d){
+        $all[] = ['id'=>(int)$d['id'], 'name'=>$d['name']];
+        $apps = array_filter(array_map('trim', explode(',', (string)$d['applicable_types'])));
+        foreach ($apps as $t){ $t=strtolower($t); if(!isset($byType[$t])) $byType[$t]=[]; $byType[$t][] = ['id'=>(int)$d['id'], 'name'=>$d['name']]; }
+      }
+    ?>
+    var covByType = <?= json_encode($byType) ?>;
+    var covAll = <?= json_encode($all) ?>;
+
     function fill(sel, arr, includeEmpty){
       while (sel.firstChild) sel.removeChild(sel.firstChild);
       if (includeEmpty){ var o=document.createElement('option'); o.value=''; o.textContent='--'; sel.appendChild(o); }
@@ -760,8 +770,18 @@ if ($isEdit) {
     if (pSel){
       var aSel = document.getElementById('lm_cov');
       var cSel = document.getElementById('lm_child_cov');
-      function apply(){ var pid = parseInt(pSel.value,10); fill(aSel, covMap[pid]||[], false); fill(cSel, covMap[pid]||[], true); }
-      pSel.addEventListener('change', apply); apply();
+      function apply(){
+        var pid = parseInt(pSel.value,10);
+        var list = (covMap && covMap[pid]) ? covMap[pid] : null;
+        if (!list || !list.length){
+          var t = polType && polType[pid] ? String(polType[pid]).toLowerCase() : '';
+          list = (covByType && covByType[t]) ? covByType[t] : covAll;
+        }
+        fill(aSel, list||[], false);
+        fill(cSel, list||[], true);
+      }
+      pSel.addEventListener('change', apply);
+      apply();
     }
   })();
 </script>
@@ -814,15 +834,18 @@ if ($isEdit) {
             <?php endforeach; ?>
           </div>
         <?php endif; ?>
-        <button class="btn" data-modal-open="locModal">Add Location</button>
       </div>
       <?php else: ?>
         <div class="small muted">Save the asset first to configure locations and public link.</div>
       <?php endif; ?>
       <?php if ($isEdit): ?>
       <div style="margin-top:12px">
-        <h2>Policies</h2>
-        <button class="btn" type="button" data-modal-open="linkPolicyModal">Link Policy / Coverage</button>
+        <h2>Actions</h2>
+        <div class="actions" style="flex-direction:column;gap:6px;align-items:stretch">
+          <button class="btn" type="button" data-modal-open="photoModal">Add Photos</button>
+          <button class="btn" type="button" data-modal-open="linkPolicyModal">Link Policy / Coverage</button>
+          <button class="btn" type="button" data-modal-open="locModal">Add Location</button>
+        </div>
       </div>
       <?php endif; ?>
       <hr class="divider">
