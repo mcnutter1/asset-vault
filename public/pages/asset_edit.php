@@ -861,10 +861,101 @@ if ($isEdit) {
         <?php endif; ?>
       </div>
     </div>
-  </div>
+</div>
 </div>
 
 <?php if ($isEdit): ?>
+<!-- Link Policy/Coverage Modal -->
+<div class="modal-backdrop" id="linkPolicyModal">
+  <div class="modal" style="width:min(720px,95vw)">
+    <div class="head"><strong>Link Policy / Coverage</strong><button class="x" data-modal-close="linkPolicyModal">✕</button></div>
+    <div class="body">
+      <?php
+        $allPolicies_modal = $pdo->query('SELECT id, policy_number, insurer, policy_type FROM policies ORDER BY end_date DESC')->fetchAll(PDO::FETCH_ASSOC);
+        $pcRows_modal = $pdo->query('SELECT pc.policy_id, cd.id AS cov_id, cd.name AS cov_name FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id ORDER BY pc.policy_id, cd.name')->fetchAll(PDO::FETCH_ASSOC);
+        $pcMap_modal = [];
+        foreach ($pcRows_modal as $r) { $pid = (int)$r['policy_id']; if (!isset($pcMap_modal[$pid])) $pcMap_modal[$pid]=[]; $pcMap_modal[$pid][] = ['id'=>(int)$r['cov_id'], 'name'=>$r['cov_name']]; }
+      ?>
+      <form method="post">
+        <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+        <input type="hidden" name="action" value="link_policy">
+        <div class="row">
+          <div class="col-6">
+            <label>Policy</label>
+            <select name="policy_id" id="lm_policy">
+              <?php foreach ($allPolicies_modal as $pp): ?>
+                <option value="<?= (int)$pp['id'] ?>"><?= Util::h($pp['policy_number'].' — '.$pp['insurer']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="col-6">
+            <label>Coverage (Asset)</label>
+            <select name="coverage_definition_id" id="lm_cov" required></select>
+          </div>
+          <div class="col-6">
+            <label>Applies to Contents</label>
+            <select name="applies_to_children">
+              <option value="1">Yes</option>
+              <option value="0">No</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label>Coverage (Children)</label>
+            <select name="children_coverage_definition_id" id="lm_child_cov"><option value="">--</option></select>
+          </div>
+          <div class="col-12 actions"><button class="btn" type="submit">Add Link</button></div>
+        </div>
+      </form>
+    </div>
+    <div class="foot"><button class="btn ghost" data-modal-close="linkPolicyModal">Close</button></div>
+  </div>
+</div>
+
+<script>
+  (function(){
+    // Data from PHP
+    var covMap = <?= json_encode($pcMap_modal ?? []) ?>; // policy_id => [{id,name}]
+    var polType = <?= json_encode(array_column($allPolicies_modal, 'policy_type', 'id')) ?>;
+    <?php
+      $defs = $pdo->query('SELECT id, name, applicable_types FROM coverage_definitions ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
+      $byType = [];
+      $all = [];
+      foreach ($defs as $d){
+        $all[] = ['id'=>(int)$d['id'], 'name'=>$d['name']];
+        $apps = array_filter(array_map('trim', explode(',', (string)$d['applicable_types'])));
+        foreach ($apps as $t){ $t=strtolower($t); if(!isset($byType[$t])) $byType[$t]=[]; $byType[$t][] = ['id'=>(int)$d['id'], 'name'=>$d['name']]; }
+      }
+    ?>
+    var covByType = <?= json_encode($byType) ?>;
+    var covAll = <?= json_encode($all) ?>;
+
+    function fill(sel, arr, includeEmpty){
+      if (!sel) return;
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      if (includeEmpty){ var o=document.createElement('option'); o.value=''; o.textContent='--'; sel.appendChild(o); }
+      (arr||[]).forEach(function(c){ var o=document.createElement('option'); o.value=c.id; o.textContent=c.name; sel.appendChild(o); });
+    }
+    function applyCov(){
+      var pSel = document.getElementById('lm_policy');
+      var aSel = document.getElementById('lm_cov');
+      var cSel = document.getElementById('lm_child_cov');
+      if (!pSel || !aSel || !cSel) return;
+      var pid = parseInt(pSel.value,10);
+      var list = (covMap && covMap[pid]) ? covMap[pid] : null;
+      if (!list || !list.length){
+        var t = polType && polType[pid] ? String(polType[pid]).toLowerCase() : '';
+        list = (covByType && covByType[t]) ? covByType[t] : covAll;
+      }
+      fill(aSel, list||[], false);
+      fill(cSel, list||[], true);
+    }
+    // Initialize on open and on change
+    document.querySelectorAll('[data-modal-open="linkPolicyModal"]').forEach(function(btn){
+      btn.addEventListener('click', function(){ setTimeout(applyCov, 0); });
+    });
+    document.addEventListener('change', function(e){ if (e.target && e.target.id==='lm_policy') applyCov(); });
+  })();
+</script>
 <!-- Link Policy/Coverage Modal -->
 <div class="modal-backdrop" id="linkPolicyModal">
   <div class="modal" style="width:min(720px,95vw)">
