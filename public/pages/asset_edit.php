@@ -202,7 +202,7 @@ if (($_POST['action'] ?? '') === 'save') {
     }
   }
 
-  // Handle saving address if visible
+  // Handle saving address if visible (manual entry)
   if (!empty($_POST['addr_line1']) || !empty($_POST['addr_city'])) {
     // Determine addrType again (based on chosen category_id)
     $catName = '';
@@ -225,6 +225,28 @@ if (($_POST['action'] ?? '') === 'save') {
       if ($line1 || $city) {
         $stmt = $pdo->prepare('INSERT INTO asset_addresses(asset_id, address_type, line1, line2, city, state, postal_code, country) VALUES (?,?,?,?,?,?,?,?)');
         $stmt->execute([$id, $addrType, $line1, $line2, $city, $state, $postal, $country]);
+      }
+    }
+  }
+  // Handle saving from stored address selector (storage addresses for vehicles/boats)
+  if (isset($_POST['saved_address_id']) && $_POST['saved_address_id']!=='') {
+    $saId = (int)$_POST['saved_address_id'];
+    // Determine addrType again based on chosen category_id
+    $catName = '';
+    if (!empty($category_id)) {
+      $stmt = $pdo->prepare('SELECT name FROM asset_categories WHERE id=?');
+      $stmt->execute([$category_id]);
+      $cn = $stmt->fetchColumn();
+      $catName = strtolower($cn ?: '');
+    }
+    $addrType = in_array($catName, ['vehicle','car','boat']) ? 'storage' : '';
+    if ($addrType) {
+      $stmt = $pdo->prepare('SELECT line1, line2, city, state, postal_code, country FROM saved_addresses WHERE id=?');
+      $stmt->execute([$saId]);
+      if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $pdo->prepare('DELETE FROM asset_addresses WHERE asset_id=? AND address_type=?')->execute([$id, $addrType]);
+        $ins = $pdo->prepare('INSERT INTO asset_addresses(asset_id, address_type, line1, line2, city, state, postal_code, country) VALUES (?,?,?,?,?,?,?,?)');
+        $ins->execute([$id, $addrType, $row['line1'], $row['line2'], $row['city'], $row['state'], $row['postal_code'], $row['country']]);
       }
     }
   }
@@ -474,15 +496,52 @@ if ($isEdit) {
         <?php else: ?>
           <?php $savedAddrs = $pdo->query('SELECT * FROM saved_addresses ORDER BY name')->fetchAll(); ?>
           <div class="col-12">
-            <label>Select Saved Address</label>
-            <select id="saved_address_id" name="saved_address_id">
-              <option value="">--</option>
-              <?php foreach ($savedAddrs as $sa): ?>
-                <option value="<?= (int)$sa['id'] ?>"><?= Util::h($sa['name']) ?></option>
-              <?php endforeach; ?>
-            </select>
-            <div class="small muted">Storage addresses must be selected from saved addresses (Settings → Addresses).</div>
+            <?php if (!empty($addr['line1']) || !empty($addr['city'])): ?>
+              <?php
+                $addrText = trim(($addr['line1'] ?? ''));
+                if (!empty($addr['line2'])) $addrText .= ', '.trim($addr['line2']);
+                $cityline = trim(($addr['city'] ?? ''));
+                if (!empty($addr['state'])) $cityline .= ($cityline?', ':'').trim($addr['state']);
+                if (!empty($addr['postal_code'])) $cityline .= ' '.trim($addr['postal_code']);
+                if ($cityline) $addrText .= ($addrText?', ':'').$cityline;
+                if (!empty($addr['country'])) $addrText .= ($addrText?', ':'').trim($addr['country']);
+              ?>
+              <label>Stored Address</label>
+              <div id="storedAddrView" style="display:flex; align-items:center; gap:8px;">
+                <div><strong><?= Util::h($addrText) ?></strong></div>
+                <a href="#" id="changeStoredAddr">Change</a>
+              </div>
+              <div id="storedAddrSelect" style="display:none">
+                <select id="saved_address_id" name="saved_address_id">
+                  <option value="">--</option>
+                  <?php foreach ($savedAddrs as $sa): ?>
+                    <option value="<?= (int)$sa['id'] ?>"><?= Util::h($sa['name']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="small muted">Stored addresses are configurable in Settings → Addresses.</div>
+            <?php else: ?>
+              <label>Select Stored Address</label>
+              <select id="saved_address_id" name="saved_address_id">
+                <option value="">--</option>
+                <?php foreach ($savedAddrs as $sa): ?>
+                  <option value="<?= (int)$sa['id'] ?>"><?= Util::h($sa['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+              <div class="small muted">Stored addresses are configurable in Settings → Addresses.</div>
+            <?php endif; ?>
           </div>
+          <script>
+            (function(){
+              var link = document.getElementById('changeStoredAddr');
+              if (!link) return;
+              link.addEventListener('click', function(e){ e.preventDefault();
+                var v = document.getElementById('storedAddrView');
+                var s = document.getElementById('storedAddrSelect');
+                if (v && s){ v.style.display='none'; s.style.display='block'; }
+              });
+            })();
+          </script>
         <?php endif; ?>
       <?php endif; ?>
 
