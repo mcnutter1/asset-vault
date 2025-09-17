@@ -84,8 +84,9 @@ if ($isEdit && (($_POST['action'] ?? '') === 'add_coverage')) {
   $limit = $_POST['limit_amount'] !== '' ? (float)$_POST['limit_amount'] : null;
   $ded = $_POST['deductible_amount'] !== '' ? (float)$_POST['deductible_amount'] : null;
   $notes = trim($_POST['cov_notes'] ?? '');
-  $stmt = $pdo->prepare('INSERT INTO policy_coverages(policy_id, coverage_definition_id, limit_amount, deductible_amount, notes) VALUES (?,?,?,?,?)');
-  $stmt->execute([$id, $cov, $limit, $ded, $notes]);
+  $is_acv = !empty($_POST['is_acv']) ? 1 : 0;
+  $stmt = $pdo->prepare('INSERT INTO policy_coverages(policy_id, coverage_definition_id, limit_amount, deductible_amount, notes, is_acv) VALUES (?,?,?,?,?,?)');
+  $stmt->execute([$id, $cov, $limit, $ded, $notes, $is_acv]);
   Util::redirect('index.php?page=policy_edit&id='.$id);
 }
 if ($isEdit && (($_POST['action'] ?? '') === 'remove_coverage')) {
@@ -245,7 +246,7 @@ if ($isEdit) {
 
 <?php if ($isEdit): ?>
 <div class="row" style="margin-top:16px">
-  <div class="col-6">
+  <div class="col-8">
     <div class="card">
       <h2>Coverages</h2>
       <form method="post" class="input-row" style="margin-bottom:8px">
@@ -261,15 +262,17 @@ if ($isEdit) {
         </div>
         <div><label>Limit</label><input type="number" step="0.01" name="limit_amount"></div>
         <div><label>Deductible</label><input type="number" step="0.01" name="deductible_amount"></div>
+        <div style="align-self:end"><label>&nbsp;</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="is_acv" value="1"> Actual Cash Value</label></div>
         <div class="col-12"><label>Notes</label><input name="cov_notes"></div>
   <div class="col-12"><button class="btn sm" type="submit">Add Coverage</button></div>
       </form>
-      <table>
-        <thead><tr><th>Coverage</th><th>Limit</th><th>Deductible</th><th>Notes</th><th></th></tr></thead>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Coverage</th><th>Type</th><th>Limit</th><th>Deductible</th><th>Notes</th><th></th></tr></thead>
         <tbody>
           <?php foreach ($coverages as $c): ?>
             <tr>
               <td><?= Util::h($c['name']) ?></td>
+              <td><?= !empty($c['is_acv']) ? '<span class="pill">ACV</span>' : '<span class="pill primary">RCV</span>' ?></td>
               <td><?= $c['limit_amount']!==null? ('$'.number_format($c['limit_amount'],2)) : '-' ?></td>
               <td><?= $c['deductible_amount']!==null? ('$'.number_format($c['deductible_amount'],2)) : '-' ?></td>
               <td><?= Util::h($c['notes']) ?></td>
@@ -278,16 +281,16 @@ if ($isEdit) {
                   <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                   <input type="hidden" name="action" value="remove_coverage">
                   <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
-                  <button class="btn sm ghost danger">Remove</button>
+                  <button class="btn sm ghost danger" title="Remove">🗑️</button>
                 </form>
               </td>
             </tr>
           <?php endforeach; ?>
         </tbody>
-      </table>
+      </table></div>
     </div>
   </div>
-  <div class="col-6">
+  <div class="col-4">
     <div class="card">
       <h2>Linked Assets</h2>
       <form method="post" class="input-row" style="margin-bottom:8px">
@@ -310,7 +313,7 @@ if ($isEdit) {
         </div>
   <div class="col-12"><button class="btn sm" type="submit">Link</button></div>
       </form>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr><th>Asset</th><th>Children</th><th></th></tr></thead>
         <tbody>
           <?php foreach ($linkedAssets as $la): ?>
@@ -322,13 +325,13 @@ if ($isEdit) {
                   <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                   <input type="hidden" name="action" value="unlink_asset">
                   <input type="hidden" name="asset_id" value="<?= (int)$la['id'] ?>">
-                  <button class="btn sm ghost danger">Unlink</button>
+                  <button class="btn sm ghost danger" title="Unlink">🗑️</button>
                 </form>
               </td>
             </tr>
           <?php endforeach; ?>
         </tbody>
-      </table>
+      </table></div>
     </div>
   </div>
 
@@ -354,21 +357,18 @@ if ($isEdit) {
   <div class="col-12">
     <div class="card">
       <h2>Documents</h2>
-      <form method="post" enctype="multipart/form-data" class="actions" style="margin-bottom:8px">
-        <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-        <input type="hidden" name="action" value="upload_file">
-        <input type="file" name="docs[]" multiple>
-  <button class="btn sm" type="submit">Upload</button>
-      </form>
+      <div class="actions" style="margin-bottom:8px">
+        <button class="btn sm" type="button" data-modal-open="docModal">Add Documents</button>
+      </div>
       <?php if (!$policyFiles): ?>
         <div class="small muted">No documents uploaded.</div>
       <?php else: ?>
-        <table>
+        <div class="table-wrap"><table id="docsTable">
           <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
           <tbody>
             <?php foreach ($policyFiles as $f): ?>
               <tr>
-                <td><a href="<?= Util::baseUrl('file.php?id='.(int)$f['id'].'&download=1') ?>" data-file-id="<?= (int)$f['id'] ?>" data-filename="<?= Util::h($f['filename']) ?>" data-size="<?= (int)$f['size'] ?>" data-uploaded="<?= Util::h($f['uploaded_at']) ?>"><?= Util::h($f['filename']) ?></a></td>
+                <td><a href="<?= Util::baseUrl('file.php?id='.(int)$f['id']) ?>" target="_blank"><?= Util::h($f['filename']) ?></a></td>
                 <td><?= Util::h($f['mime_type']) ?></td>
                 <td><?= number_format((int)$f['size']) ?> bytes</td>
                 <td><?= Util::h($f['uploaded_at']) ?></td>
@@ -377,14 +377,39 @@ if ($isEdit) {
                     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                     <input type="hidden" name="action" value="trash_file">
                     <input type="hidden" name="file_id" value="<?= (int)$f['id'] ?>">
-                    <button class="btn sm ghost danger">Trash</button>
+                    <button class="btn sm ghost danger" title="Trash">🗑️</button>
                   </form>
                 </td>
               </tr>
             <?php endforeach; ?>
           </tbody>
-        </table>
+        </table></div>
       <?php endif; ?>
+    </div>
+  </div>
+</div>
+<!-- Document Upload Modal -->
+<div class="modal-backdrop" id="docModal">
+  <div class="modal" style="width:min(640px,95vw)">
+    <div class="head"><strong>Upload and attach documents</strong><button class="x" data-modal-close="docModal">✕</button></div>
+    <div class="body">
+      <div class="uploader">
+        <div class="dropzone" id="dm_drop">
+          <input id="dm_input" type="file" multiple aria-label="Choose files">
+          <div class="dz-inner">
+            <div class="dz-icon">📄</div>
+            <div class="dz-title"><label for="dm_input" style="cursor:pointer">Click to upload</label> or drag and drop</div>
+            <div class="dz-sub">Maximum file size based on server limits.</div>
+          </div>
+        </div>
+        <div id="dm_error" class="uploader-error" style="display:none"></div>
+        <div id="dm_list" class="uploader-list"></div>
+        <div id="dm_status" class="uploader-status" style="display:none"></div>
+      </div>
+    </div>
+    <div class="foot" style="justify-content: space-between;">
+      <button class="btn ghost" type="button" data-modal-close="docModal">Cancel</button>
+      <button class="btn" type="button" id="dm_upload" disabled>Attach files</button>
     </div>
   </div>
 </div>

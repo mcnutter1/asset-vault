@@ -100,6 +100,7 @@ function initDOM(){
   initImagePreviewModal();
   initFileActions();
   initPhotoModal();
+  initDocModal();
   initAssetsFilter();
   initNavToggle();
 }
@@ -230,6 +231,81 @@ function initPhotoModal(){
     setStatus('All uploads processed.');
     upBtn.disabled = true;
     toast('Photos uploaded');
+  });
+}
+
+// Document upload modal (policy docs)
+function initDocModal(){
+  const modal = qs('#docModal');
+  if (!modal) return;
+  const drop = qs('#dm_drop', modal);
+  const input = qs('#dm_input', modal);
+  const list = qs('#dm_list', modal);
+  const errBox = qs('#dm_error', modal);
+  const upBtn = qs('#dm_upload', modal);
+  const status = qs('#dm_status', modal);
+
+  let queue = [];
+  function add(files){ Array.from(files||[]).forEach(f=>{ queue.push({file:f, id:Math.random().toString(36).slice(2), prog:0, error:'', done:false}); }); render(); }
+  function render(){
+    list.innerHTML='';
+    queue.forEach(it=>{
+      const row=document.createElement('div'); row.className='upl-row'+(it.done?' done':'');
+      const left=document.createElement('div'); left.className='upl-left';
+      const icon=document.createElement('div'); icon.className='upl-icon'; icon.textContent='📄';
+      const meta=document.createElement('div'); meta.className='upl-meta';
+      const name=document.createElement('div'); name.className='upl-name'; name.textContent=it.file.name;
+      const size=document.createElement('div'); size.className='upl-size'; size.textContent=prettySize(it.file.size);
+      meta.appendChild(name); meta.appendChild(size); left.appendChild(icon); left.appendChild(meta);
+      const x=document.createElement('button'); x.type='button'; x.className='upl-x'; x.textContent='✕'; x.onclick=()=>{ queue=queue.filter(q=>q.id!==it.id); render(); };
+      const bar=document.createElement('div'); bar.className='upl-bar'; const fill=document.createElement('div'); fill.className='upl-fill'; fill.style.width=(it.prog||0)+'%'; bar.appendChild(fill);
+      const err=document.createElement('div'); err.className='upl-err'; if (it.error) err.textContent=it.error;
+      row.appendChild(left); row.appendChild(x); row.appendChild(bar); row.appendChild(err); list.appendChild(row);
+    });
+    upBtn.disabled = queue.length===0;
+  }
+  function setError(msg){ if(msg){ errBox.textContent=msg; errBox.style.display='block'; } else { errBox.textContent=''; errBox.style.display='none'; } }
+  function setStatus(msg){ status.textContent=msg||''; status.style.display=msg?'block':'none'; }
+
+  input && input.addEventListener('change', e=> add(e.target.files));
+  function prevent(e){ e.preventDefault(); e.stopPropagation(); }
+  ['dragenter','dragover','dragleave','drop'].forEach(ev=> drop && drop.addEventListener(ev, prevent));
+  drop && drop.addEventListener('drop', e=> add(e.dataTransfer.files));
+
+  upBtn && upBtn.addEventListener('click', async ()=>{
+    if (!queue.length) return; setError(''); let done=0; const base = (document.querySelector('base')? document.querySelector('base').href : '');
+    for (const it of queue){
+      await new Promise((resolve)=>{
+        const xhr=new XMLHttpRequest(); xhr.open('POST', base+'upload_policy_file.php'); xhr.responseType='json'; xhr.setRequestHeader('X-Requested-With','XMLHttpRequest');
+        xhr.onload=function(){
+          let json = xhr.response && typeof xhr.response==='object' ? xhr.response : null;
+          if (!json && xhr.responseText){ try{ json=JSON.parse(xhr.responseText); }catch(e){} }
+          if (xhr.status>=200 && xhr.status<300 && json && json.ok){
+            // Append to docs table
+            const tbl=document.querySelector('#docsTable tbody');
+            (json.files||[]).forEach(f=>{
+              if (tbl){
+                const tr=document.createElement('tr');
+                tr.innerHTML = '<td><a href="'+f.url+'" target="_blank">'+(f.filename||'')+'</a></td>'+
+                               '<td>'+(f.mime||'')+'</td>'+
+                               '<td>'+prettySize(f.size||0)+'</td>'+
+                               '<td></td>'+
+                               '<td></td>';
+                tbl.appendChild(tr);
+              }
+            });
+            it.prog=100; it.done=true; render(); resolve();
+          } else { it.error=(json&&json.error)?json.error:('Upload failed (HTTP '+xhr.status+')'); render(); resolve(); }
+        };
+        xhr.upload.onprogress=function(e){ if (e.lengthComputable){ it.prog=Math.round((e.loaded/e.total)*100); render(); } };
+        xhr.onerror=function(){ it.error='Network error'; render(); resolve(); };
+        const form=new FormData(); const csrf=document.querySelector('input[name="csrf"]'); form.append('csrf', csrf?csrf.value:''); form.append('policy_id', (new URLSearchParams(location.search)).get('id')||''); form.append('file', it.file, it.file.name); xhr.send(form);
+      });
+      done++; setStatus('Uploaded '+done+' of '+queue.length);
+    }
+    toast('Documents uploaded');
+    upBtn.disabled=true; setStatus('All uploads processed');
+    // keep modal open to review; user can close
   });
 }
 

@@ -32,6 +32,21 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_files_trash();
+  // Ensure ACV flag on policy_coverages
+  if (!function_exists('av_ensure_policy_acv')) {
+    function av_ensure_policy_acv(){
+      try {
+        $pdo = Database::get();
+        $col = $pdo->query("SHOW COLUMNS FROM policy_coverages LIKE 'is_acv'")->fetch();
+        if (!$col) {
+          $pdo->exec("ALTER TABLE policy_coverages ADD COLUMN is_acv TINYINT(1) NOT NULL DEFAULT 0 AFTER notes");
+        }
+      } catch (Throwable $e) {
+        // ignore
+      }
+    }
+  }
+  av_ensure_policy_acv();
   ?>
   <div class="app-bar">
     <div class="inner">
