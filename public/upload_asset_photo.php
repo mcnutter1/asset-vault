@@ -11,8 +11,25 @@ function up_send($code, $data){
   exit;
 }
 
-// Require auth + role
-ensure_role(['vault','admin']);
+// Require auth + role (AJAX-friendly: no redirects)
+if (!function_exists('av_require_auth_json')) {
+  function av_require_auth_json(){
+    global $config; // from auth.php
+    $cookie = $_COOKIE[$config['cookie_name']] ?? null;
+    if (!$cookie) { up_send(401, ['ok'=>false,'error'=>'Not authenticated']); }
+    $data = json_decode($cookie, true);
+    if (!($data && isset($data['session_token']))) { up_send(401, ['ok'=>false,'error'=>'Invalid session']); }
+    // Revalidate to refresh cookie and catch revoked sessions
+    if (!revalidate($data['session_token'])) { up_send(401, ['ok'=>false,'error'=>'Session expired']); }
+    $new = $_COOKIE[$config['cookie_name']] ?? null; $auth = $new ? (json_decode($new, true) ?: $data) : $data;
+    $roles = $auth['roles'] ?? [];
+    if (!(in_array('vault', $roles, true) || in_array('admin', $roles, true))) {
+      up_send(403, ['ok'=>false,'error'=>'Not authorized']);
+    }
+    return $auth;
+  }
+}
+av_require_auth_json();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   up_send(405, ['ok'=>false,'error'=>'Method not allowed']);

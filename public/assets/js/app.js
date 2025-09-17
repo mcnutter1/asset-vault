@@ -124,14 +124,14 @@ function initPhotoModal(){
     const files = Array.from(fileList || []);
     files.forEach(f=>{
       if (!f.type || !/^image\//i.test(f.type)) return;
-      queue.push({ file:f, id: Math.random().toString(36).slice(2), prog:0, error:'' });
+      queue.push({ file:f, id: Math.random().toString(36).slice(2), prog:0, error:'', done:false });
     });
     renderQueue();
   }
   function renderQueue(){
     list.innerHTML = '';
     queue.forEach(item=>{
-      const row = document.createElement('div'); row.className='upl-row';
+      const row = document.createElement('div'); row.className='upl-row' + (item.done ? ' done' : '');
       const left = document.createElement('div'); left.className='upl-left';
       const icon = document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️';
       const meta = document.createElement('div'); meta.className='upl-meta';
@@ -168,12 +168,28 @@ function initPhotoModal(){
     for (const item of queue) {
       await new Promise((resolve)=>{
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', (document.querySelector('base')?.href||'') + 'upload_asset_photo.php');
+        var baseEl = document.querySelector('base');
+        var baseHref = baseEl ? baseEl.href : '';
+        xhr.open('POST', baseHref + 'upload_asset_photo.php');
         xhr.responseType = 'json';
+        xhr.setRequestHeader('X-Requested-With','XMLHttpRequest');
         xhr.onload = function(){
-          if (xhr.status >= 200 && xhr.status < 300 && xhr.response && xhr.response.ok) {
+          var ct = xhr.getResponseHeader('Content-Type') || '';
+          var json = xhr.response && typeof xhr.response === 'object' ? xhr.response : null;
+          if (!json && ct.indexOf('application/json') === -1 && xhr.responseText) {
+            try { json = JSON.parse(xhr.responseText); } catch(e) { json = null; }
+          }
+          if (xhr.status === 413) {
+            item.error = 'File too large for server limits. Please reduce size or increase upload_max_filesize / client_max_body_size.';
+            renderQueue(); return resolve();
+          }
+          if (xhr.status === 401 || xhr.status === 403) {
+            item.error = 'Session expired or not authorized. Please reload and sign in again.';
+            renderQueue(); return resolve();
+          }
+          if (xhr.status >= 200 && xhr.status < 300 && json && json.ok) {
             // Append to gallery
-            const files = xhr.response.files || [];
+            const files = json.files || [];
             const gal = document.getElementById('photoGallery');
             const empty = document.getElementById('photoEmpty');
             if (empty) empty.style.display='none';
@@ -181,9 +197,10 @@ function initPhotoModal(){
             files.forEach(f=>{
               if (gal) { const im = document.createElement('img'); im.src = f.url; im.alt = f.filename; gal.appendChild(im); }
             });
+            item.prog = 100; item.done = true; item.error=''; renderQueue();
             resolve();
           } else {
-            const err = (xhr.response && xhr.response.error) ? xhr.response.error : 'Upload failed';
+            const err = (json && json.error) ? json.error : ('Upload failed (HTTP '+xhr.status+')');
             item.error = err; renderQueue();
             resolve();
           }
@@ -191,17 +208,18 @@ function initPhotoModal(){
         xhr.onerror = function(){ setError('Network error during upload.'); resolve(); };
         xhr.upload.onprogress = function(e){ if (e.lengthComputable){ item.prog = Math.round((e.loaded/e.total)*100); renderQueue(); } };
         const form = new FormData();
-        form.append('csrf', document.querySelector('input[name="csrf"]')?.value || '');
-        form.append('asset_id', (new URLSearchParams(location.search)).get('id') || '');
+        var csrfEl = document.querySelector('input[name="csrf"]');
+        form.append('csrf', csrfEl ? csrfEl.value : '');
+        var id = null; try { id = new URLSearchParams(location.search).get('id'); } catch(e) { id = null; }
+        form.append('asset_id', id || '');
         form.append('photo', item.file, item.file.name);
         xhr.send(form);
       });
       done++;
       setStatus('Uploaded '+done+' of '+queue.length);
     }
-    queue = []; renderQueue(); setStatus('');
-    // Close modal
-    modal.classList.remove('show');
+    setStatus('All uploads processed.');
+    upBtn.disabled = true;
     toast('Photos uploaded');
   });
 }
