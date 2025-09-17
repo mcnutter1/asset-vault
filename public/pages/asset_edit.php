@@ -531,7 +531,7 @@ if ($isEdit) {
           <input type="file" name="photos[]" accept="image/*" multiple style="display:none" aria-hidden="true">
         </div>
         <?php if ($photos): ?>
-          <div class="gallery" id="photoGallery" style="margin-top:8px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
+          <div class="gallery sm" id="photoGallery" style="margin-top:8px;">
             <?php foreach ($photos as $ph): ?>
               <div class="thumb" data-file-wrap>
                 <button class="thumb-trash" type="button" title="Move to Trash" data-file-trash data-file-id="<?= (int)$ph['id'] ?>">🗑️</button>
@@ -541,7 +541,7 @@ if ($isEdit) {
           </div>
         <?php else: ?>
           <div class="small muted" id="photoEmpty">No photos yet. Add some to document the asset.</div>
-          <div class="gallery" id="photoGallery" style="margin-top:8px; display:none; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"></div>
+          <div class="gallery sm" id="photoGallery" style="margin-top:8px; display:none;"></div>
         <?php endif; ?>
       </div>
 

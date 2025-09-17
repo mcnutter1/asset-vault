@@ -240,7 +240,10 @@ function initImagePreviewModal(){
   const title = document.getElementById('im_title');
   const meta = document.getElementById('im_meta');
   document.addEventListener('click', function(e){
-    const el = e.target.closest('[data-file-id]');
+    // Ignore clicks on action buttons (trash/restore/delete)
+    if (e.target.closest('[data-file-trash],[data-file-restore],[data-file-delete]')) return;
+    // Only preview when clicking an image or a link representing a file
+    const el = e.target.closest('img[data-file-id], a[data-file-id]');
     if (!el) return;
     if (el.tagName === 'A') { e.preventDefault(); }
     const id = el.getAttribute('data-file-id');
@@ -248,7 +251,9 @@ function initImagePreviewModal(){
     const size = el.getAttribute('data-size') || '';
     const uploaded = el.getAttribute('data-uploaded') || '';
     title.textContent = name;
-    img.src = (document.querySelector('base')?.href||'') + 'file.php?id=' + encodeURIComponent(id);
+    var baseEl = document.querySelector('base');
+    var baseHref = baseEl ? baseEl.href : '';
+    img.src = baseHref + 'file.php?id=' + encodeURIComponent(id);
     meta.textContent = (size? prettySize(parseInt(size,10))+' • ' : '') + (uploaded || '');
     modal.classList.add('show');
   });
@@ -268,7 +273,9 @@ function initFileActions(){
     form.append('csrf', csrfEl ? csrfEl.value : '');
     form.append('file_id', id);
     form.append('action', action);
-    fetch((document.querySelector('base')?.href||'') + 'file_action.php', { method:'POST', body: form, headers:{'X-Requested-With':'XMLHttpRequest'} })
+    var baseEl = document.querySelector('base');
+    var baseHref = baseEl ? baseEl.href : '';
+    fetch(baseHref + 'file_action.php', { method:'POST', body: form, headers:{'X-Requested-With':'XMLHttpRequest'} })
       .then(r=>r.json()).then(j=>{
         if (!j.ok) throw new Error(j.error||'Action failed');
         // Remove thumbnail if present
