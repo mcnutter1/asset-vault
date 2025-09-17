@@ -466,6 +466,36 @@ if ($isEdit) {
         <div class="col-4"><label>Hours Used</label><input type="number" step="1" min="0" name="hours_used" value="<?= Util::h($asset['hours_used'] ?? '') ?>"></div>
       <?php endif; ?>
       <div class="col-4"><label>Purchase Date</label><input type="date" name="purchase_date" value="<?= Util::h($asset['purchase_date']) ?>"></div>
+      <?php
+        // Dynamic properties for this category
+        $propDefs = [];
+        if (!empty($asset['category_id'])) {
+          $stmt = $pdo->prepare('SELECT * FROM asset_property_defs WHERE is_active=1 AND category_id=? ORDER BY sort_order, display_name');
+          $stmt->execute([$asset['category_id']]);
+          $propDefs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+        $propVals = [];
+        if ($isEdit && $propDefs) {
+          $ids = implode(',', array_map('intval', array_column($propDefs, 'id')));
+          $rows = $pdo->query('SELECT property_def_id, value_text FROM asset_property_values WHERE asset_id='.(int)$id.' AND property_def_id IN ('.$ids.')')->fetchAll(PDO::FETCH_ASSOC);
+          foreach ($rows as $r) { $propVals[(int)$r['property_def_id']] = $r['value_text']; }
+        }
+      ?>
+      <?php if ($propDefs): ?>
+        <div class="col-12"><h2>Additional Properties</h2></div>
+        <?php foreach ($propDefs as $d): $pid=(int)$d['id']; $v=$propVals[$pid] ?? ''; $t=$d['input_type']; ?>
+          <?php if ($t==='checkbox'): ?>
+            <div class="col-4"><label><?= Util::h($d['display_name']) ?></label><input type="checkbox" name="prop_<?= $pid ?>" value="1" <?= ($v==='1')?'checked':'' ?>></div>
+          <?php elseif ($t==='date'): ?>
+            <div class="col-4"><label><?= Util::h($d['display_name']) ?></label><input type="date" name="prop_<?= $pid ?>" value="<?= Util::h($v) ?>"></div>
+          <?php elseif ($t==='number'): ?>
+            <div class="col-4"><label><?= Util::h($d['display_name']) ?></label><input type="number" step="0.01" name="prop_<?= $pid ?>" value="<?= Util::h($v) ?>"></div>
+          <?php else: ?>
+            <div class="col-4"><label><?= Util::h($d['display_name']) ?></label><input name="prop_<?= $pid ?>" value="<?= Util::h($v) ?>"></div>
+          <?php endif; ?>
+        <?php endforeach; ?>
+      <?php endif; ?>
+
       <div class="col-12"><label>Notes</label><textarea name="notes" rows="2"><?= Util::h($asset['notes']) ?></textarea></div>
 
       <?php

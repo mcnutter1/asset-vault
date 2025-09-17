@@ -235,6 +235,25 @@ if ($policies) {
       <div class="asset-attr"><span class="attr-label">Make</span><span class="attr-value"><?= Util::h($asset['make']) ?: '—' ?></span></div>
       <div class="asset-attr"><span class="attr-label">Model</span><span class="attr-value"><?= Util::h($asset['model']) ?: '—' ?></span></div>
       <div class="asset-attr"><span class="attr-label">Year</span><span class="attr-value"><?= Util::h($asset['year']) ?: '—' ?></span></div>
+      <?php if (!empty($asset['category_id'])): ?>
+        <?php
+          $st = $pdo->prepare('SELECT id, display_name, input_type FROM asset_property_defs WHERE is_active=1 AND show_on_view=1 AND category_id=? ORDER BY sort_order, display_name');
+          $st->execute([$asset['category_id']]);
+          $defs = $st->fetchAll();
+          if ($defs) {
+            $ids = implode(',', array_map('intval', array_column($defs, 'id')));
+            $vv = $pdo->query('SELECT property_def_id, value_text FROM asset_property_values WHERE asset_id='.(int)$asset['id'].' AND property_def_id IN ('.$ids.')')->fetchAll();
+            $map = [];
+            foreach ($vv as $r) { $map[(int)$r['property_def_id']] = $r['value_text']; }
+            foreach ($defs as $d) {
+              $pid = (int)$d['id'];
+              $val = $map[$pid] ?? '';
+              if ($d['input_type'] === 'checkbox') { $val = ($val==='1') ? 'Yes' : 'No'; }
+              echo '<div class="asset-attr"><span class="attr-label">'.Util::h($d['display_name']).'</span><span class="attr-value">'.($val!==''?Util::h($val):'—').'</span></div>';
+            }
+          }
+        ?>
+      <?php endif; ?>
       <div class="asset-attr"><span class="attr-label">Token</span><span class="attr-value" style="font-family:monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; max-width:160px; display:inline-block;">
         <?= Util::h(substr($asset['public_token'] ?? '',0,20)) ?>
       </span></div>

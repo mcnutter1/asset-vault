@@ -73,6 +73,38 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_policy_acv();
+  // Ensure dynamic asset properties tables exist (idempotent)
+  if (!function_exists('av_ensure_asset_properties')) {
+    function av_ensure_asset_properties(){
+      try {
+        $pdo = Database::get();
+        $pdo->exec("CREATE TABLE IF NOT EXISTS asset_property_defs (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          category_id INT NULL,
+          name_key VARCHAR(100) NOT NULL,
+          display_name VARCHAR(150) NOT NULL,
+          input_type ENUM('text','date','number','checkbox') NOT NULL DEFAULT 'text',
+          show_on_view TINYINT(1) NOT NULL DEFAULT 1,
+          sort_order INT NOT NULL DEFAULT 0,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_cat_key (category_id, name_key),
+          CONSTRAINT fk_propdefs_category FOREIGN KEY (category_id) REFERENCES asset_categories(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS asset_property_values (
+          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+          asset_id INT NOT NULL,
+          property_def_id INT NOT NULL,
+          value_text TEXT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_asset_prop (asset_id, property_def_id),
+          CONSTRAINT fk_propvals_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+          CONSTRAINT fk_propvals_def FOREIGN KEY (property_def_id) REFERENCES asset_property_defs(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+      } catch (Throwable $e) { /* ignore if perms restricted */ }
+    }
+  }
+  av_ensure_asset_properties();
   ?>
   <div class="app-bar">
     <div class="inner">
