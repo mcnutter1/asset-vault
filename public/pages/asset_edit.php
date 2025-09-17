@@ -524,13 +524,19 @@ if ($isEdit) {
             <?= Util::h(implode("\n", $uploadErrors)) ?>
           </div>
         <?php endif; ?>
-        <input type="file" name="photos[]" accept="image/*" capture="environment" multiple>
+        <div class="actions" style="margin-bottom:8px">
+          <button class="btn" type="button" data-modal-open="photoModal">Add Photos</button>
+          <input type="file" name="photos[]" accept="image/*" capture="environment" multiple style="display:none" aria-hidden="true">
+        </div>
         <?php if ($photos): ?>
-          <div class="gallery" style="margin-top:8px">
+          <div class="gallery" id="photoGallery" style="margin-top:8px; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));">
             <?php foreach ($photos as $ph): ?>
               <img src="<?= Util::baseUrl('file.php?id='.(int)$ph['id']) ?>" alt="<?= Util::h($ph['filename']) ?>">
             <?php endforeach; ?>
           </div>
+        <?php else: ?>
+          <div class="small muted" id="photoEmpty">No photos yet. Add some to document the asset.</div>
+          <div class="gallery" id="photoGallery" style="margin-top:8px; display:none; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));"></div>
         <?php endif; ?>
       </div>
 
@@ -824,6 +830,31 @@ if ($isEdit) {
 </div>
 
 <?php if ($isEdit): ?>
+<!-- Add Photo Modal -->
+<div class="modal-backdrop" id="photoModal">
+  <div class="modal" style="width:min(560px, 95vw)">
+    <div class="head"><strong>Add Photos</strong><button class="x" data-modal-close="photoModal">✕</button></div>
+    <div class="body">
+      <div class="small muted" style="margin-bottom:8px">Choose a source</div>
+      <div class="photo-actions" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:8px">
+        <button class="btn ghost block" type="button" id="pm_take">📷 Take Photo</button>
+        <button class="btn ghost block" type="button" id="pm_library">🖼️ Photo Library</button>
+        <button class="btn ghost block" type="button" id="pm_files">📁 Files</button>
+      </div>
+      <input type="file" id="pm_input_camera" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="pm_input_library" accept="image/*" multiple style="display:none">
+      <input type="file" id="pm_input_files" multiple style="display:none">
+
+      <div id="pm_error" class="small" style="color:#dc2626; display:none; white-space:pre-wrap; margin:6px 0 8px"></div>
+      <div id="pm_queue" class="gallery" style="margin-top:6px; grid-template-columns:repeat(auto-fit,minmax(90px,1fr))"></div>
+      <div id="pm_status" class="small muted" style="display:none; margin-top:6px"></div>
+    </div>
+    <div class="foot">
+      <button class="btn ghost" type="button" data-modal-close="photoModal">Cancel</button>
+      <button class="btn" type="button" id="pm_upload" disabled>Upload</button>
+    </div>
+  </div>
+  </div>
 <!-- Add Location Modal -->
 <div class="modal-backdrop" id="locModal">
   <div class="modal">
