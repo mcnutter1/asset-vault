@@ -610,37 +610,7 @@ if ($isEdit) {
           $pcMap = [];
           foreach ($pcRows as $r) { $pid = (int)$r['policy_id']; if (!isset($pcMap[$pid])) $pcMap[$pid]=[]; $pcMap[$pid][] = ['id'=>(int)$r['cov_id'], 'name'=>$r['cov_name']]; }
         ?>
-        <div class="actions" style="margin-bottom:8px">
-          <button class="btn sm" type="button" id="showLinkBox">Link Policy / Coverage</button>
-        </div>
-        <form method="post" id="linkBox" class="input-row" style="margin-bottom:8px; display:none" hidden>
-          <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-          <input type="hidden" name="action" value="link_policy">
-          <div>
-            <label>Policy</label>
-            <select name="policy_id" id="lp_policy">
-              <?php foreach ($allPolicies as $pp): ?>
-                <option value="<?= (int)$pp['id'] ?>"><?= Util::h($pp['policy_number'].' — '.$pp['insurer']) ?></option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-          <div>
-            <label>Coverage (Asset)</label>
-            <select name="coverage_definition_id" id="lp_cov" required></select>
-          </div>
-          <div>
-            <label>Applies to Contents</label>
-            <select name="applies_to_children">
-              <option value="1">Yes</option>
-              <option value="0">No</option>
-            </select>
-          </div>
-          <div>
-            <label>Coverage (Children)</label>
-            <select name="children_coverage_definition_id" id="lp_child_cov"><option value="">--</option></select>
-          </div>
-          <div class="col-12"><button class="btn" type="submit">Add Link</button></div>
-        </form>
+        <div class="small muted" style="margin-bottom:8px">Use the sidebar button to link additional coverages.</div>
         <?php if (!$policies): ?>
           <div class="small muted">No direct policy links. Policies can also inherit from parents.</div>
         <?php else: ?>
@@ -779,29 +749,19 @@ if ($isEdit) {
   })();
   // Populate coverage selects for policy linking
   (function(){
+    // Preload map for modal policy -> coverage options
     var covMap = <?= json_encode($pcMap ?? []) ?>;
     function fill(sel, arr, includeEmpty){
       while (sel.firstChild) sel.removeChild(sel.firstChild);
       if (includeEmpty){ var o=document.createElement('option'); o.value=''; o.textContent='--'; sel.appendChild(o); }
       (arr||[]).forEach(function(c){ var o=document.createElement('option'); o.value=c.id; o.textContent=c.name; sel.appendChild(o); });
     }
-    var pSel = document.getElementById('lp_policy');
+    var pSel = document.getElementById('lm_policy');
     if (pSel){
-      var aSel = document.getElementById('lp_cov');
-      var cSel = document.getElementById('lp_child_cov');
+      var aSel = document.getElementById('lm_cov');
+      var cSel = document.getElementById('lm_child_cov');
       function apply(){ var pid = parseInt(pSel.value,10); fill(aSel, covMap[pid]||[], false); fill(cSel, covMap[pid]||[], true); }
       pSel.addEventListener('change', apply); apply();
-    }
-    var btn = document.getElementById('showLinkBox');
-    var box = document.getElementById('linkBox');
-    if (btn && box){
-      // Ensure hidden on load
-      box.hidden = true; box.style.display = 'none';
-      btn.addEventListener('click', function(){
-        var showing = !box.hidden;
-        if (showing){ box.hidden = true; box.style.display = 'none'; }
-        else { box.hidden = false; box.style.display = 'grid'; }
-      });
     }
   })();
 </script>
@@ -859,6 +819,12 @@ if ($isEdit) {
       <?php else: ?>
         <div class="small muted">Save the asset first to configure locations and public link.</div>
       <?php endif; ?>
+      <?php if ($isEdit): ?>
+      <div style="margin-top:12px">
+        <h2>Policies</h2>
+        <button class="btn" type="button" data-modal-open="linkPolicyModal">Link Policy / Coverage</button>
+      </div>
+      <?php endif; ?>
       <hr class="divider">
       <div class="actions" style="justify-content: space-between;">
         <button class="btn" type="button" onclick="document.getElementById('assetForm').submit()">Save</button>
@@ -876,6 +842,51 @@ if ($isEdit) {
 </div>
 
 <?php if ($isEdit): ?>
+<!-- Link Policy/Coverage Modal -->
+<div class="modal-backdrop" id="linkPolicyModal">
+  <div class="modal" style="width:min(720px,95vw)">
+    <div class="head"><strong>Link Policy / Coverage</strong><button class="x" data-modal-close="linkPolicyModal">✕</button></div>
+    <div class="body">
+      <?php
+        $allPolicies_modal = $pdo->query('SELECT id, policy_number, insurer FROM policies ORDER BY end_date DESC')->fetchAll();
+        $pcRows_modal = $pdo->query('SELECT pc.policy_id, cd.id AS cov_id, cd.name AS cov_name FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id ORDER BY pc.policy_id, cd.name')->fetchAll();
+        $pcMap_modal = [];
+        foreach ($pcRows_modal as $r) { $pid = (int)$r['policy_id']; if (!isset($pcMap_modal[$pid])) $pcMap_modal[$pid]=[]; $pcMap_modal[$pid][] = ['id'=>(int)$r['cov_id'], 'name'=>$r['cov_name']]; }
+      ?>
+      <form method="post">
+        <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+        <input type="hidden" name="action" value="link_policy">
+        <div class="row">
+          <div class="col-6">
+            <label>Policy</label>
+            <select name="policy_id" id="lm_policy">
+              <?php foreach ($allPolicies_modal as $pp): ?>
+                <option value="<?= (int)$pp['id'] ?>"><?= Util::h($pp['policy_number'].' — '.$pp['insurer']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="col-6">
+            <label>Coverage (Asset)</label>
+            <select name="coverage_definition_id" id="lm_cov" required></select>
+          </div>
+          <div class="col-6">
+            <label>Applies to Contents</label>
+            <select name="applies_to_children">
+              <option value="1">Yes</option>
+              <option value="0">No</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label>Coverage (Children)</label>
+            <select name="children_coverage_definition_id" id="lm_child_cov"><option value="">--</option></select>
+          </div>
+          <div class="col-12 actions"><button class="btn" type="submit">Add Link</button></div>
+        </div>
+      </form>
+    </div>
+    <div class="foot"><button class="btn ghost" data-modal-close="linkPolicyModal">Close</button></div>
+  </div>
+</div>
 <!-- Add Photo Modal -->
 <div class="modal-backdrop" id="photoModal">
   <div class="modal" style="width:min(640px, 95vw)">
