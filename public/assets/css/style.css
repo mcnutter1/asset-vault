@@ -97,8 +97,9 @@ tbody tr:hover { background: #FAF9F8; }
 .pill.danger { border-color: var(--danger); color: var(--danger); background: #fee2e2; }
 
 .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
-.gallery.sm { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px; }
+.gallery.sm { grid-template-columns: repeat(auto-fill, 90px); gap: 6px; justify-content: flex-start; }
 .gallery img { width: 100%; aspect-ratio: 3 / 4; height: auto; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); background: #fff; }
+.gallery.sm img { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
 
 /* Thumb wrapper with overlay actions */
 .thumb { position: relative; }
