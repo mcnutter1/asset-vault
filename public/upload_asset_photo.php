@@ -46,32 +46,65 @@ if (!function_exists('av_normalize_upload_image')) {
     }
     $outMime = $mime; $outName = $origName; $content = @file_get_contents($tmp);
     if ($content === false) { return [$content, $outMime, $outName]; }
+
+    // HEIC/HEIF -> JPEG (Imagick only)
     if (preg_match('~^image/(heic|heif)$~i', (string)$mime)) {
       if (extension_loaded('imagick')) {
-        try { $img = new Imagick($tmp); if (method_exists($img,'autoOrient')) { @$img->autoOrient(); }
-          $img->setImageFormat('jpeg'); $img->setImageCompressionQuality(85);
-          $content = (string)$img->getImageBlob(); $outMime = 'image/jpeg';
+        try {
+          $img = new Imagick($tmp);
+          if (method_exists($img,'autoOrient')) { @$img->autoOrient(); }
+          $img->setImageFormat('jpeg');
+          $img->setImageCompressionQuality(85);
+          $content = (string)$img->getImageBlob();
+          $outMime = 'image/jpeg';
           $outName = preg_replace('/\.(heic|heif)$/i', '.jpg', $origName);
-        } catch (Throwable $e) { /* ignore */ }
+        } catch (Throwable $e) { /* keep original on failure */ }
       }
       return [$content, $outMime, $outName];
     }
+
+    // Resize/compress large images when libraries are available
     $maxDim = 2400; $maxProcessSize = 8*1024*1024;
     if (strlen($content) <= $maxProcessSize && preg_match('~^image/(jpeg|png|webp)$~i', (string)$mime)) {
-      $info = @getimagesize($tmp);
-      if ($info && isset($info[0],$info[1])) {
-        $w=(int)$info[0]; $h=(int)$info[1]; $scale = max($w,$h) > $maxDim ? ($maxDim / max($w,$h)) : 1.0; $needsScale = $scale < 0.999;
-        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION)); $img=null;
-        if (stripos($mime,'jpeg')!==false || $ext==='jpg' || $ext==='jpeg') { $img=@imagecreatefromjpeg($tmp);
-          if (function_exists('exif_read_data')) { $exif=@exif_read_data($tmp); if (!empty($exif['Orientation'])) {
-            switch ((int)$exif['Orientation']) { case 3:$img=@imagerotate($img,180,0); break; case 6:$img=@imagerotate($img,-90,0); break; case 8:$img=@imagerotate($img,90,0); break; }
-          } }
-        } elseif (stripos($mime,'png')!==false || $ext==='png') { $img=@imagecreatefrompng($tmp); }
-        elseif (stripos($mime,'webp')!==false || $ext==='webp') { if (function_exists('imagecreatefromwebp')) { $img=@imagecreatefromwebp($tmp); } }
-        if ($img) {
-          if ($needsScale) { $newW=(int)round($w*$scale); $newH=(int)round($h*$scale); $dst=imagecreatetruecolor($newW,$newH); imagecopyresampled($dst,$img,0,0,0,0,$newW,$newH,$w,$h); imagedestroy($img); $img=$dst; }
-          ob_start(); @imagejpeg($img, null, 85); $content2 = ob_get_clean(); if ($content2) { $content=$content2; $outMime='image/jpeg'; if (!preg_match('/\.(jpe?g)$/i',$outName)) { $outName = preg_replace('/\.[^.]*$/','.jpg',$outName); } }
-          imagedestroy($img);
+      // Prefer Imagick if present
+      if (extension_loaded('imagick')) {
+        try {
+          $im = new Imagick($tmp);
+          if (method_exists($im,'autoOrient')) { @$im->autoOrient(); }
+          $w = $im->getImageWidth(); $h = $im->getImageHeight();
+          $maxSide = max($w,$h);
+          if ($maxSide > $maxDim) { $im->thumbnailImage($maxDim, $maxDim, true); }
+          $im->setImageFormat('jpeg');
+          $im->setImageCompressionQuality(85);
+          $content2 = (string)$im->getImageBlob();
+          if ($content2) { $content = $content2; $outMime = 'image/jpeg'; if (!preg_match('/\.(jpe?g)$/i',$outName)) { $outName = preg_replace('/\.[^.]*$/','.jpg',$outName); } }
+        } catch (Throwable $e) { /* fall through to GD/original */ }
+      } else {
+        // Fallback to GD only if functions exist
+        $info = @getimagesize($tmp);
+        if ($info && isset($info[0],$info[1])) {
+          $w=(int)$info[0]; $h=(int)$info[1];
+          $scale = max($w,$h) > $maxDim ? ($maxDim / max($w,$h)) : 1.0;
+          $needsScale = $scale < 0.999;
+          $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+          $img=null;
+          if ((stripos($mime,'jpeg')!==false || $ext==='jpg' || $ext==='jpeg') && function_exists('imagecreatefromjpeg')) {
+            $img=@imagecreatefromjpeg($tmp);
+            if ($img && function_exists('exif_read_data')) {
+              $exif=@exif_read_data($tmp); if (!empty($exif['Orientation']) && function_exists('imagerotate')) {
+                switch ((int)$exif['Orientation']) { case 3:$img=@imagerotate($img,180,0); break; case 6:$img=@imagerotate($img,-90,0); break; case 8:$img=@imagerotate($img,90,0); break; }
+              }
+            }
+          } elseif ((stripos($mime,'png')!==false || $ext==='png') && function_exists('imagecreatefrompng')) {
+            $img=@imagecreatefrompng($tmp);
+          } elseif ((stripos($mime,'webp')!==false || $ext==='webp') && function_exists('imagecreatefromwebp')) {
+            $img=@imagecreatefromwebp($tmp);
+          }
+          if ($img && function_exists('imagecreatetruecolor') && function_exists('imagecopyresampled') && function_exists('imagejpeg')) {
+            if ($needsScale) { $newW=(int)round($w*$scale); $newH=(int)round($h*$scale); $dst=imagecreatetruecolor($newW,$newH); imagecopyresampled($dst,$img,0,0,0,0,$newW,$newH,$w,$h); imagedestroy($img); $img=$dst; }
+            ob_start(); @imagejpeg($img, null, 85); $content2 = ob_get_clean(); if ($content2) { $content=$content2; $outMime='image/jpeg'; if (!preg_match('/\.(jpe?g)$/i',$outName)) { $outName = preg_replace('/\.[^.]*$/','.jpg',$outName); } }
+            imagedestroy($img);
+          }
         }
       }
     }
@@ -140,4 +173,3 @@ foreach ($files as $f) {
 }
 
 up_send(200, ['ok'=>true, 'files'=>$inserted]);
-

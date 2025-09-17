@@ -21,7 +21,7 @@ if (!function_exists('av_normalize_upload_image')) {
     $content = @file_get_contents($tmp);
     if ($content === false) { return [$content, $outMime, $outName]; }
 
-    // If HEIC/HEIF, try to convert to JPEG via Imagick for broad browser support
+    // HEIC/HEIF -> JPEG via Imagick when available
     if (preg_match('~^image/(heic|heif)$~i', (string)$mime)) {
       if (extension_loaded('imagick')) {
         try {
@@ -31,62 +31,64 @@ if (!function_exists('av_normalize_upload_image')) {
           $img->setImageCompressionQuality(85);
           $content = (string)$img->getImageBlob();
           $outMime = 'image/jpeg';
-          // Force .jpg extension
           $outName = preg_replace('/\.(heic|heif)$/i', '.jpg', $origName);
-        } catch (Throwable $e) {
-          // Fall back to original content if conversion fails
-        }
+        } catch (Throwable $e) { /* keep original on failure */ }
       }
       return [$content, $outMime, $outName];
     }
 
-    // For very large JPEG/PNG/WebP, downscale to reasonable dimensions and re-encode as JPEG
+    // Resize/compress with Imagick if present; otherwise attempt GD safely
     $maxDim = 2400; // pixels
     $maxProcessSize = 8 * 1024 * 1024; // only process if <= 8MB already uploaded
     if (strlen($content) <= $maxProcessSize && preg_match('~^image/(jpeg|png|webp)$~i', (string)$mime)) {
-      $info = @getimagesize($tmp);
-      if ($info && isset($info[0], $info[1])) {
-        $w = (int)$info[0]; $h = (int)$info[1];
-        $scale = max($w, $h) > $maxDim ? ($maxDim / max($w, $h)) : 1.0;
-        $needsScale = $scale < 0.999;
-        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
-        $img = null;
-        // Decode
-        if (stripos($mime, 'jpeg') !== false || $ext === 'jpg' || $ext === 'jpeg') {
-          $img = @imagecreatefromjpeg($tmp);
-          // Orientation fix for JPEG
-          if (function_exists('exif_read_data')) {
-            $exif = @exif_read_data($tmp);
-            if (!empty($exif['Orientation'])) {
-              switch ((int)$exif['Orientation']) {
-                case 3: $img = @imagerotate($img, 180, 0); break;
-                case 6: $img = @imagerotate($img, -90, 0); break;
-                case 8: $img = @imagerotate($img, 90, 0); break;
+      if (extension_loaded('imagick')) {
+        try {
+          $im = new Imagick($tmp);
+          if (method_exists($im,'autoOrient')) { @$im->autoOrient(); }
+          $w=$im->getImageWidth(); $h=$im->getImageHeight();
+          if (max($w,$h) > $maxDim) { $im->thumbnailImage($maxDim, $maxDim, true); }
+          $im->setImageFormat('jpeg');
+          $im->setImageCompressionQuality(85);
+          $content2 = (string)$im->getImageBlob();
+          if ($content2) { $content=$content2; $outMime='image/jpeg'; if (!preg_match('/\.(jpe?g)$/i',$outName)) { $outName=preg_replace('/\.[^.]*$/','.jpg',$outName); } }
+        } catch (Throwable $e) { /* fallthrough */ }
+      } else {
+        $info = @getimagesize($tmp);
+        if ($info && isset($info[0], $info[1])) {
+          $w=(int)$info[0]; $h=(int)$info[1];
+          $scale = max($w, $h) > $maxDim ? ($maxDim / max($w, $h)) : 1.0;
+          $needsScale = $scale < 0.999;
+          $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+          $img = null;
+          if ((stripos($mime, 'jpeg') !== false || $ext === 'jpg' || $ext === 'jpeg') && function_exists('imagecreatefromjpeg')) {
+            $img = @imagecreatefromjpeg($tmp);
+            if ($img && function_exists('exif_read_data') && function_exists('imagerotate')) {
+              $exif = @exif_read_data($tmp);
+              if (!empty($exif['Orientation'])) {
+                switch ((int)$exif['Orientation']) {
+                  case 3: $img = @imagerotate($img, 180, 0); break;
+                  case 6: $img = @imagerotate($img, -90, 0); break;
+                  case 8: $img = @imagerotate($img, 90, 0); break;
+                }
               }
             }
+          } elseif ((stripos($mime, 'png') !== false || $ext === 'png') && function_exists('imagecreatefrompng')) {
+            $img = @imagecreatefrompng($tmp);
+          } elseif ((stripos($mime, 'webp') !== false || $ext === 'webp') && function_exists('imagecreatefromwebp')) {
+            $img = @imagecreatefromwebp($tmp);
           }
-        } elseif (stripos($mime, 'png') !== false || $ext === 'png') {
-          $img = @imagecreatefrompng($tmp);
-        } elseif (stripos($mime, 'webp') !== false || $ext === 'webp') {
-          if (function_exists('imagecreatefromwebp')) { $img = @imagecreatefromwebp($tmp); }
-        }
-        if ($img) {
-          if ($needsScale) {
-            $newW = (int)round($w * $scale); $newH = (int)round($h * $scale);
-            $dst = imagecreatetruecolor($newW, $newH);
-            imagecopyresampled($dst, $img, 0, 0, 0, 0, $newW, $newH, $w, $h);
+          if ($img && function_exists('imagecreatetruecolor') && function_exists('imagecopyresampled') && function_exists('imagejpeg')) {
+            if ($needsScale) {
+              $newW = (int)round($w * $scale); $newH = (int)round($h * $scale);
+              $dst = imagecreatetruecolor($newW, $newH);
+              imagecopyresampled($dst, $img, 0, 0, 0, 0, $newW, $newH, $w, $h);
+              imagedestroy($img);
+              $img = $dst;
+            }
+            ob_start(); @imagejpeg($img, null, 85); $content2 = ob_get_clean();
+            if ($content2) { $content = $content2; $outMime='image/jpeg'; if (!preg_match('/\.(jpe?g)$/i', $outName)) { $outName = preg_replace('/\.[^.]*$/', '.jpg', $outName); } }
             imagedestroy($img);
-            $img = $dst;
           }
-          ob_start();
-          @imagejpeg($img, null, 85);
-          $content2 = ob_get_clean();
-          if ($content2) {
-            $content = $content2;
-            $outMime = 'image/jpeg';
-            if (!preg_match('/\.(jpe?g)$/i', $outName)) { $outName = preg_replace('/\.[^.]*$/', '.jpg', $outName); }
-          }
-          imagedestroy($img);
         }
       }
     }
