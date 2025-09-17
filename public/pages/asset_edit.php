@@ -308,7 +308,7 @@ if ($isEdit) {
 }
 
 // Handle link/unlink of policy from asset with coverage mapping
-if ($isEdit && (($_POST['action'] ?? '') === 'link_policy')) {
+if ($isEdit && ((($_POST['lp_action'] ?? '') === 'link_policy') || (($_POST['action'] ?? '') === 'link_policy'))) {
   Util::checkCsrf();
   $pid = (int)($_POST['policy_id'] ?? 0);
   $apply = !empty($_POST['applies_to_children']) ? 1 : 0;
@@ -319,7 +319,7 @@ if ($isEdit && (($_POST['action'] ?? '') === 'link_policy')) {
   $stmt->execute([$pid, $id, $apply, $cov, $childCov]);
   Util::redirect('index.php?page=asset_edit&id='.$id);
 }
-if ($isEdit && (($_POST['action'] ?? '') === 'unlink_policy')) {
+if ($isEdit && ((($_POST['lp_action'] ?? '') === 'unlink_policy') || (($_POST['action'] ?? '') === 'unlink_policy'))) {
   Util::checkCsrf();
   $pid = (int)($_POST['policy_id'] ?? 0);
   $covId = isset($_POST['coverage_definition_id']) && $_POST['coverage_definition_id']!=='' ? (int)$_POST['coverage_definition_id'] : null;
@@ -639,7 +639,7 @@ ALTER TABLE policy_assets ADD UNIQUE KEY uniq_policy_asset (policy_id, asset_id,
                   <td>
                     <form method="post" onsubmit="return confirmAction('Unlink policy?')">
                       <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-                      <input type="hidden" name="action" value="unlink_policy">
+                      <input type="hidden" name="lp_action" value="unlink_policy">
                       <input type="hidden" name="policy_id" value="<?= (int)$p['id'] ?>">
                       <input type="hidden" name="coverage_definition_id" value="<?= isset($p['coverage_definition_id']) ? (int)$p['coverage_definition_id'] : '' ?>">
                       <button class="btn sm ghost danger" title="Unlink">🗑️</button>
@@ -678,10 +678,7 @@ ALTER TABLE policy_assets ADD UNIQUE KEY uniq_policy_asset (policy_id, asset_id,
       </div>
       <?php endif; ?>
       <?php endif; ?>
-      <div class="col-12 actions" style="margin-top:8px">
-        <button class="btn" type="submit">Save</button>
-        <a class="btn ghost" href="<?= Util::baseUrl('index.php?page=assets') ?>">Cancel</a>
-      </div>
+        
     </div>
   </form>
 <script>
@@ -893,7 +890,7 @@ ALTER TABLE policy_assets ADD UNIQUE KEY uniq_policy_asset (policy_id, asset_id,
       ?>
       <form method="post">
         <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
-        <input type="hidden" name="action" value="link_policy">
+        <input type="hidden" name="lp_action" value="link_policy">
         <div class="row">
           <div class="col-6">
             <label>Policy</label>
