@@ -602,6 +602,21 @@ if ($isEdit) {
       <div class="col-12">
         <h2>Linked Policies</h2>
         <?php
+          // Detect if DB schema allows multiple coverages per policy/asset
+          $idxCols = $pdo->query("SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name='policy_assets' AND index_name='uniq_policy_asset'")->fetchColumn();
+          $hasCovCol = (bool)$pdo->query("SHOW COLUMNS FROM policy_assets LIKE 'coverage_definition_id'")->fetch();
+          $multiCovOk = $hasCovCol && $idxCols && (strpos($idxCols, 'coverage_definition_id') !== false);
+          if (!$multiCovOk): ?>
+            <div class="small" style="color:#b91c1c; background:#fef2f2; border:1px solid #fecaca; padding:8px 10px; border-radius:8px; margin:6px 0 10px;">
+              Multiple coverages from the same policy cannot be added until the database index is updated.
+              Run the following in MySQL (as your app DB user):
+              <pre style="white-space:pre-wrap; font-size:11px; line-height:1.4; margin:6px 0 0;">-- allow multiple coverages per policy/asset
+ALTER TABLE policy_assets DROP INDEX uniq_policy_asset;
+ALTER TABLE policy_assets ADD UNIQUE KEY uniq_policy_asset (policy_id, asset_id, coverage_definition_id);
+              </pre>
+            </div>
+        <?php endif; ?>
+        <?php
           $allPolicies = $pdo->query('SELECT id, policy_number, insurer FROM policies ORDER BY end_date DESC')->fetchAll();
           $pcRows = $pdo->query('SELECT pc.policy_id, cd.id AS cov_id, cd.name AS cov_name FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id ORDER BY pc.policy_id, cd.name')->fetchAll();
           $pcMap = [];
