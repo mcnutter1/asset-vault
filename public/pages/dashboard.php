@@ -104,6 +104,26 @@ foreach ($topLevel as $t) {
 $perAssetCards = array_slice($perAssetCards, 0, 8);
 $expiring = $pdo->query("SELECT p.*, pg.display_name FROM policies p JOIN policy_groups pg ON pg.id=p.policy_group_id WHERE p.end_date >= CURDATE() AND p.end_date <= DATE_ADD(CURDATE(), INTERVAL 60 DAY) ORDER BY p.end_date ASC LIMIT 10")->fetchAll();
 
+// Incomplete assets detection
+$assetRows = $pdo->query("SELECT a.id, a.name, a.make, a.model, a.year, a.updated_at, ac.name AS category FROM assets a LEFT JOIN asset_categories ac ON ac.id=a.category_id WHERE a.is_deleted=0 ORDER BY a.name")->fetchAll();
+$photoMapRows = $pdo->query("SELECT entity_id aid, COUNT(*) c FROM files WHERE entity_type='asset' AND is_trashed=0 AND mime_type LIKE 'image/%' GROUP BY entity_id")->fetchAll();
+$photoMap = []; foreach ($photoMapRows as $r){ $photoMap[(int)$r['aid']] = (int)$r['c']; }
+$hasValueRows = $pdo->query("SELECT DISTINCT asset_id FROM asset_values WHERE value_type IN ('current','replace')")->fetchAll();
+$hasValue = []; foreach ($hasValueRows as $r){ $hasValue[(int)$r['asset_id']] = true; }
+$incompleteAssets = [];
+foreach ($assetRows as $a){
+  $reasons = [];
+  $cat = strtolower($a['category'] ?? '');
+  if (($photoMap[(int)$a['id']] ?? 0) <= 0) $reasons[] = 'No photos';
+  if (empty($hasValue[(int)$a['id']])) $reasons[] = 'No value';
+  $needsMakeModel = !in_array($cat, ['home','house','property','residence']);
+  if ($needsMakeModel && (trim((string)$a['make'])==='' && trim((string)$a['model'])==='')) $reasons[] = 'Make/Model missing';
+  if (in_array($cat, ['vehicle','car','truck','auto','boat']) && empty($a['year'])) $reasons[] = 'Year missing';
+  if ($reasons) { $incompleteAssets[] = ['id'=>(int)$a['id'],'name'=>$a['name'],'category'=>$a['category'],'updated_at'=>$a['updated_at'],'reasons'=>$reasons]; }
+}
+// limit to 10 for the dashboard
+$incompleteAssets = array_slice($incompleteAssets, 0, 10);
+
 ?>
 <div class="row">
   <div class="col-3"><div class="card stat"><div class="stat-title">Total Assets</div><div class="stat-value"><?= $assetsCount ?></div><div class="muted">Items in portfolio</div></div></div>
@@ -134,6 +154,29 @@ $expiring = $pdo->query("SELECT p.*, pg.display_name FROM policies p JOIN policy
             <?php endforeach; ?>
           </tbody>
         </table>
+      <?php endif; ?>
+    </div>
+  </div>
+  <div class="col-6">
+    <div class="card">
+      <h1>Incomplete Assets</h1>
+      <?php if (!$incompleteAssets): ?>
+        <div class="small muted">Great job — no incomplete assets found.</div>
+      <?php else: ?>
+        <table>
+          <thead><tr><th>Asset</th><th>Category</th><th>Issues</th><th>Updated</th></tr></thead>
+          <tbody>
+            <?php foreach ($incompleteAssets as $ia): ?>
+              <tr>
+                <td><a href="<?= Util::baseUrl('index.php?page=asset_edit&id='.(int)$ia['id']) ?>"><?= Util::h($ia['name']) ?></a></td>
+                <td><?= Util::h($ia['category']) ?></td>
+                <td><?= Util::h(implode(', ', $ia['reasons'])) ?></td>
+                <td><?= Util::h($ia['updated_at']) ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        <div class="small muted">Assets listed here are missing key information (photos, values, or details). Click a name to complete.</div>
       <?php endif; ?>
     </div>
   </div>
