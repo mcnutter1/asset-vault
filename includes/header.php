@@ -32,6 +32,32 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_files_trash();
+  // Ensure policy_assets supports multiple coverages per asset by adding coverage columns
+  if (!function_exists('av_ensure_policy_assets_cov')) {
+    function av_ensure_policy_assets_cov(){
+      try {
+        $pdo = Database::get();
+        $col1 = $pdo->query("SHOW COLUMNS FROM policy_assets LIKE 'coverage_definition_id'")->fetch();
+        if (!$col1) { $pdo->exec("ALTER TABLE policy_assets ADD COLUMN coverage_definition_id INT NULL AFTER applies_to_children"); }
+        $col2 = $pdo->query("SHOW COLUMNS FROM policy_assets LIKE 'children_coverage_definition_id'")->fetch();
+        if (!$col2) { $pdo->exec("ALTER TABLE policy_assets ADD COLUMN children_coverage_definition_id INT NULL AFTER coverage_definition_id"); }
+        // Adjust unique index to include coverage_definition_id so multiple coverages can be linked
+        $idx = $pdo->query("SHOW INDEX FROM policy_assets WHERE Key_name='uniq_policy_asset'")->fetchAll();
+        if ($idx) {
+          // Drop and recreate
+          $pdo->exec("ALTER TABLE policy_assets DROP INDEX uniq_policy_asset");
+        }
+        // Create new unique index if not already there
+        $idx2 = $pdo->query("SHOW INDEX FROM policy_assets WHERE Key_name='uniq_policy_asset'")->fetchAll();
+        if (!$idx2) {
+          $pdo->exec("ALTER TABLE policy_assets ADD UNIQUE KEY uniq_policy_asset (policy_id, asset_id, coverage_definition_id)");
+        }
+      } catch (Throwable $e) {
+        // ignore if permissions restricted
+      }
+    }
+  }
+  av_ensure_policy_assets_cov();
   // Ensure ACV flag on policy_coverages
   if (!function_exists('av_ensure_policy_acv')) {
     function av_ensure_policy_acv(){

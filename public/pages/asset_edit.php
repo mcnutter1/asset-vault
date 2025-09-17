@@ -296,12 +296,13 @@ if ($isEdit) {
 // Linked policies (direct) with coverage mapping
 $policies = [];
 if ($isEdit) {
-  $stmt = $pdo->prepare('SELECT p.*, cd.name AS cov_name, pc.limit_amount
+  $stmt = $pdo->prepare('SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type,
+                                cd.name AS cov_name, pc.limit_amount, pa.coverage_definition_id
                          FROM policy_assets pa
                          JOIN policies p ON p.id=pa.policy_id
                          LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id
                          LEFT JOIN policy_coverages pc ON pc.policy_id=p.id AND pc.coverage_definition_id=pa.coverage_definition_id
-                         WHERE pa.asset_id=? ORDER BY p.end_date DESC');
+                         WHERE pa.asset_id=? ORDER BY p.policy_number ASC');
   $stmt->execute([$id]);
   $policies = $stmt->fetchAll();
 }
@@ -322,8 +323,14 @@ if ($isEdit && (($_POST['action'] ?? '') === 'link_policy')) {
 if ($isEdit && (($_POST['action'] ?? '') === 'unlink_policy')) {
   Util::checkCsrf();
   $pid = (int)($_POST['policy_id'] ?? 0);
-  $stmt = $pdo->prepare('DELETE FROM policy_assets WHERE policy_id=? AND asset_id=?');
-  $stmt->execute([$pid, $id]);
+  $covId = isset($_POST['coverage_definition_id']) && $_POST['coverage_definition_id']!=='' ? (int)$_POST['coverage_definition_id'] : null;
+  if ($covId) {
+    $stmt = $pdo->prepare('DELETE FROM policy_assets WHERE policy_id=? AND asset_id=? AND coverage_definition_id=?');
+    $stmt->execute([$pid, $id, $covId]);
+  } else {
+    $stmt = $pdo->prepare('DELETE FROM policy_assets WHERE policy_id=? AND asset_id=?');
+    $stmt->execute([$pid, $id]);
+  }
   Util::redirect('index.php?page=asset_edit&id='.$id);
 }
 
@@ -604,7 +611,10 @@ if ($isEdit) {
           $pcMap = [];
           foreach ($pcRows as $r) { $pid = (int)$r['policy_id']; if (!isset($pcMap[$pid])) $pcMap[$pid]=[]; $pcMap[$pid][] = ['id'=>(int)$r['cov_id'], 'name'=>$r['cov_name']]; }
         ?>
-        <form method="post" class="input-row" style="margin-bottom:8px">
+        <div class="actions" style="margin-bottom:8px">
+          <button class="btn sm" type="button" id="showLinkBox">Link Policy / Coverage</button>
+        </div>
+        <form method="post" id="linkBox" class="input-row" style="margin-bottom:8px; display:none">
           <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
           <input type="hidden" name="action" value="link_policy">
           <div>
@@ -617,7 +627,7 @@ if ($isEdit) {
           </div>
           <div>
             <label>Coverage (Asset)</label>
-            <select name="coverage_definition_id" id="lp_cov"></select>
+            <select name="coverage_definition_id" id="lp_cov" required></select>
           </div>
           <div>
             <label>Applies to Contents</label>
@@ -635,8 +645,8 @@ if ($isEdit) {
         <?php if (!$policies): ?>
           <div class="small muted">No direct policy links. Policies can also inherit from parents.</div>
         <?php else: ?>
-          <table>
-            <thead><tr><th>Policy #</th><th>Insurer</th><th>Coverage</th><th>Limit</th><th>Type</th><th>Start</th><th>End</th><th>Premium</th><th></th></tr></thead>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Policy #</th><th>Insurer</th><th>Coverage</th><th>Limit</th><th>Status</th><th></th></tr></thead>
             <tbody>
               <?php foreach ($policies as $p): ?>
                 <tr>
@@ -644,22 +654,20 @@ if ($isEdit) {
                   <td><?= Util::h($p['insurer']) ?></td>
                   <td><?= Util::h($p['cov_name'] ?? '-') ?></td>
                   <td><?= isset($p['limit_amount']) ? ('$'.number_format($p['limit_amount'],2)) : '-' ?></td>
-                  <td><?= Util::h($p['policy_type']) ?></td>
-                  <td><?= Util::h($p['start_date']) ?></td>
-                  <td><?= Util::h($p['end_date']) ?></td>
-                  <td>$<?= number_format($p['premium'],2) ?></td>
+                  <td><span class="pill <?= ($p['status']==='active')?'primary':'warn' ?>"><?= Util::h($p['status']) ?></span></td>
                   <td>
                     <form method="post" onsubmit="return confirmAction('Unlink policy?')">
                       <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                       <input type="hidden" name="action" value="unlink_policy">
                       <input type="hidden" name="policy_id" value="<?= (int)$p['id'] ?>">
-                      <button class="btn ghost danger">Unlink</button>
+                      <input type="hidden" name="coverage_definition_id" value="<?= isset($p['coverage_definition_id']) ? (int)$p['coverage_definition_id'] : '' ?>">
+                      <button class="btn sm ghost danger" title="Unlink">🗑️</button>
                     </form>
                   </td>
                 </tr>
               <?php endforeach; ?>
             </tbody>
-          </table>
+          </table></div>
         <?php endif; ?>
       </div>
       
@@ -785,6 +793,9 @@ if ($isEdit) {
       function apply(){ var pid = parseInt(pSel.value,10); fill(aSel, covMap[pid]||[], false); fill(cSel, covMap[pid]||[], true); }
       pSel.addEventListener('change', apply); apply();
     }
+    var btn = document.getElementById('showLinkBox');
+    var box = document.getElementById('linkBox');
+    if (btn && box){ btn.addEventListener('click', function(){ box.style.display = (box.style.display==='none' || box.style.display==='') ? 'grid' : 'none'; }); }
   })();
 </script>
   </div>
