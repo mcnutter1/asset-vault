@@ -107,65 +107,58 @@ if (document.readyState === 'loading') {
   initDOM();
 }
 
-// Photo upload modal logic (camera/library/files with previews and progress)
+// Photo upload modal logic: dropzone + overlaid input, progress bars, iPhone-friendly
 function initPhotoModal(){
   const modal = qs('#photoModal');
   if (!modal) return;
-  const takeBtn = qs('#pm_take', modal);
-  const libBtn = qs('#pm_library', modal);
-  const filesBtn = qs('#pm_files', modal);
-  const inCam = qs('#pm_input_camera', modal);
-  const inLib = qs('#pm_input_library', modal);
-  const inFiles = qs('#pm_input_files', modal);
-  const qWrap = qs('#pm_queue', modal);
+  const drop = qs('#pm_drop', modal);
+  const input = qs('#pm_input', modal);
+  const list = qs('#pm_list', modal);
   const errBox = qs('#pm_error', modal);
   const upBtn = qs('#pm_upload', modal);
   const status = qs('#pm_status', modal);
 
   let queue = [];
 
-  function openPicker(input){ input.value=''; input.click(); }
   function addFiles(fileList){
     const files = Array.from(fileList || []);
     files.forEach(f=>{
       if (!f.type || !/^image\//i.test(f.type)) return;
-      queue.push({ file:f, id: Math.random().toString(36).slice(2), prog:0 });
+      queue.push({ file:f, id: Math.random().toString(36).slice(2), prog:0, error:'' });
     });
     renderQueue();
   }
   function renderQueue(){
-    qWrap.innerHTML = '';
+    list.innerHTML = '';
     queue.forEach(item=>{
-      const d = document.createElement('div');
-      d.style.position='relative';
-      const img = document.createElement('img');
-      img.alt = item.file.name;
-      img.style.width='100%'; img.style.height='90px'; img.style.objectFit='cover'; img.style.borderRadius='8px';
-      const rm = document.createElement('button');
-      rm.type='button'; rm.textContent='✕'; rm.className='btn sm ghost';
-      rm.style.cssText='position:absolute;top:6px;right:6px;padding:2px 6px;background:#fff;border:1px solid var(--border);border-radius:999px;font-weight:700;line-height:1;';
-      rm.onclick=()=>{ queue = queue.filter(q=>q.id!==item.id); renderQueue(); };
-      const bar = document.createElement('div');
-      bar.style.cssText='position:absolute;left:0;right:0;bottom:0;height:4px;background:#e5e7eb;border-radius:0 0 8px 8px;overflow:hidden;';
-      const fill = document.createElement('div');
-      fill.style.cssText='height:100%;width:'+item.prog+'%;background:var(--primary);transition:width .2s';
+      const row = document.createElement('div'); row.className='upl-row';
+      const left = document.createElement('div'); left.className='upl-left';
+      const icon = document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️';
+      const meta = document.createElement('div'); meta.className='upl-meta';
+      const name = document.createElement('div'); name.className='upl-name'; name.textContent = item.file.name;
+      const size = document.createElement('div'); size.className='upl-size'; size.textContent = prettySize(item.file.size);
+      meta.appendChild(name); meta.appendChild(size);
+      left.appendChild(icon); left.appendChild(meta);
+      const close = document.createElement('button'); close.type='button'; close.className='upl-x'; close.textContent='✕';
+      close.onclick=()=>{ queue = queue.filter(q=>q.id!==item.id); renderQueue(); };
+      const bar = document.createElement('div'); bar.className='upl-bar';
+      const fill = document.createElement('div'); fill.className='upl-fill'; fill.style.width = (item.prog||0)+'%';
       bar.appendChild(fill);
-      d.appendChild(img); d.appendChild(rm); d.appendChild(bar);
-      qWrap.appendChild(d);
-      // thumbnail
-      const reader = new FileReader(); reader.onload = e=>{ img.src = e.target.result; }; reader.readAsDataURL(item.file);
+      const err = document.createElement('div'); err.className='upl-err'; if (item.error){ err.textContent=item.error; }
+      row.appendChild(left); row.appendChild(close); row.appendChild(bar); row.appendChild(err);
+      list.appendChild(row);
     });
     upBtn.disabled = queue.length===0;
   }
   function setError(msg){ if (msg){ errBox.textContent = msg; errBox.style.display='block'; } else { errBox.textContent=''; errBox.style.display='none'; } }
   function setStatus(msg){ status.textContent = msg||''; status.style.display = msg? 'block':'none'; }
 
-  takeBtn && takeBtn.addEventListener('click', ()=> openPicker(inCam));
-  libBtn && libBtn.addEventListener('click', ()=> openPicker(inLib));
-  filesBtn && filesBtn.addEventListener('click', ()=> openPicker(inFiles));
-  inCam && inCam.addEventListener('change', e=> addFiles(e.target.files));
-  inLib && inLib.addEventListener('change', e=> addFiles(e.target.files));
-  inFiles && inFiles.addEventListener('change', e=> addFiles(e.target.files));
+  // Overlaid input covers the dropzone for iOS compatibility
+  input && input.addEventListener('change', e=> addFiles(e.target.files));
+  // Desktop drag & drop
+  function dz(e){ e.preventDefault(); e.stopPropagation(); }
+  ['dragenter','dragover','dragleave','drop'].forEach(evt=> drop && drop.addEventListener(evt, dz));
+  drop && drop.addEventListener('drop', e=>{ addFiles(e.dataTransfer.files); });
 
   // Upload using XHR to get progress
   upBtn && upBtn.addEventListener('click', async ()=>{
@@ -191,7 +184,7 @@ function initPhotoModal(){
             resolve();
           } else {
             const err = (xhr.response && xhr.response.error) ? xhr.response.error : 'Upload failed';
-            setError(err);
+            item.error = err; renderQueue();
             resolve();
           }
         };
@@ -211,4 +204,10 @@ function initPhotoModal(){
     modal.classList.remove('show');
     toast('Photos uploaded');
   });
+}
+
+function prettySize(bytes){
+  const units=['B','KB','MB','GB']; let i=0; let n=bytes;
+  while(n>=1024 && i<units.length-1){ n/=1024; i++; }
+  return (Math.round(n*10)/10)+' '+units[i];
 }
