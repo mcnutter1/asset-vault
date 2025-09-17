@@ -613,7 +613,7 @@ if ($isEdit) {
         <div class="actions" style="margin-bottom:8px">
           <button class="btn sm" type="button" id="showLinkBox">Link Policy / Coverage</button>
         </div>
-        <form method="post" id="linkBox" class="input-row" style="margin-bottom:8px; display:none">
+        <form method="post" id="linkBox" class="input-row" style="margin-bottom:8px; display:none" hidden>
           <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
           <input type="hidden" name="action" value="link_policy">
           <div>
@@ -794,7 +794,15 @@ if ($isEdit) {
     }
     var btn = document.getElementById('showLinkBox');
     var box = document.getElementById('linkBox');
-    if (btn && box){ btn.addEventListener('click', function(){ box.style.display = (box.style.display==='none' || box.style.display==='') ? 'grid' : 'none'; }); }
+    if (btn && box){
+      // Ensure hidden on load
+      box.hidden = true; box.style.display = 'none';
+      btn.addEventListener('click', function(){
+        var showing = !box.hidden;
+        if (showing){ box.hidden = true; box.style.display = 'none'; }
+        else { box.hidden = false; box.style.display = 'grid'; }
+      });
+    }
   })();
 </script>
   </div>
