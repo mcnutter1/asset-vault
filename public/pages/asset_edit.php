@@ -314,9 +314,8 @@ if ($isEdit && (($_POST['action'] ?? '') === 'link_policy')) {
   $apply = !empty($_POST['applies_to_children']) ? 1 : 0;
   $cov = isset($_POST['coverage_definition_id']) && $_POST['coverage_definition_id']!=='' ? (int)$_POST['coverage_definition_id'] : null;
   $childCov = isset($_POST['children_coverage_definition_id']) && $_POST['children_coverage_definition_id']!=='' ? (int)$_POST['children_coverage_definition_id'] : null;
-  $stmt = $pdo->prepare('INSERT INTO policy_assets(policy_id, asset_id, applies_to_children, coverage_definition_id, children_coverage_definition_id)
-                         VALUES (?,?,?,?,?)
-                         ON DUPLICATE KEY UPDATE applies_to_children=VALUES(applies_to_children), coverage_definition_id=VALUES(coverage_definition_id), children_coverage_definition_id=VALUES(children_coverage_definition_id)');
+  $stmt = $pdo->prepare('INSERT IGNORE INTO policy_assets(policy_id, asset_id, applies_to_children, coverage_definition_id, children_coverage_definition_id)
+                         VALUES (?,?,?,?,?)');
   $stmt->execute([$pid, $id, $apply, $cov, $childCov]);
   Util::redirect('index.php?page=asset_edit&id='.$id);
 }
@@ -640,7 +639,7 @@ if ($isEdit) {
             <label>Coverage (Children)</label>
             <select name="children_coverage_definition_id" id="lp_child_cov"><option value="">--</option></select>
           </div>
-          <div class="col-12"><button class="btn" type="submit">Link/Update</button></div>
+          <div class="col-12"><button class="btn" type="submit">Add Link</button></div>
         </form>
         <?php if (!$policies): ?>
           <div class="small muted">No direct policy links. Policies can also inherit from parents.</div>

@@ -119,6 +119,9 @@ tbody tr:hover { background: #FAF9F8; }
 .card input, .card select, .card textarea { max-width: 100%; }
 
 .small { font-size: 12px; color: var(--muted); }
+
+/* Hide policy link box by default; toggled via JS */
+#linkBox { display: none; }
 .muted { color: var(--muted); }
 
 .list { display: grid; gap: 12px; }
