@@ -101,6 +101,7 @@ function initDOM(){
   initFileActions();
   initPhotoModal();
   initDocModal();
+  initPersonPhotoModal();
   initAssetsFilter();
   initNavToggle();
 }
@@ -389,4 +390,30 @@ function prettySize(bytes){
   const units=['B','KB','MB','GB']; let i=0; let n=bytes;
   while(n>=1024 && i<units.length-1){ n/=1024; i++; }
   return (Math.round(n*10)/10)+' '+units[i];
+}
+
+// Person photos uploader (modal)
+function initPersonPhotoModal(){
+  const modal = qs('#personPhotoModal');
+  if (!modal) return;
+  const drop = qs('#pp_drop', modal);
+  const input = qs('#pp_input', modal);
+  const list = qs('#pp_list', modal);
+  const errBox = qs('#pp_error', modal);
+  const upBtn = qs('#pp_upload', modal);
+  const status = qs('#pp_status', modal);
+  let queue = [];
+  function add(files){ Array.from(files||[]).forEach(f=>{ if (!/^image\//i.test(f.type)) return; queue.push({file:f,id:Math.random().toString(36).slice(2),prog:0,error:''}); }); render(); }
+  function render(){ if(!list) return; list.innerHTML=''; queue.forEach(it=>{ const row=document.createElement('div'); row.className='upl-row'; const left=document.createElement('div'); left.className='upl-left'; const icon=document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️'; const meta=document.createElement('div'); meta.className='upl-meta'; const name=document.createElement('div'); name.className='upl-name'; name.textContent=it.file.name; const size=document.createElement('div'); size.className='upl-size'; size.textContent=prettySize(it.file.size); meta.appendChild(name); meta.appendChild(size); left.appendChild(icon); left.appendChild(meta); const x=document.createElement('button'); x.type='button'; x.className='upl-x'; x.textContent='✕'; x.onclick=()=>{ queue=queue.filter(q=>q.id!==it.id); render(); }; const bar=document.createElement('div'); bar.className='upl-bar'; const fill=document.createElement('div'); fill.className='upl-fill'; fill.style.width=(it.prog||0)+'%'; bar.appendChild(fill); const err=document.createElement('div'); err.className='upl-err'; if (it.error) err.textContent=it.error; row.appendChild(left); row.appendChild(x); row.appendChild(bar); row.appendChild(err); list.appendChild(row); }); if (upBtn) upBtn.disabled = queue.length===0; }
+  function setError(msg){ if(!errBox) return; if (msg){ errBox.textContent=msg; errBox.style.display='block'; } else { errBox.textContent=''; errBox.style.display='none'; } }
+  function setStatus(msg){ if(!status) return; status.textContent=msg||''; status.style.display=msg?'block':'none'; }
+  function prevent(e){ e.preventDefault(); e.stopPropagation(); }
+  ['dragenter','dragover','dragleave','drop'].forEach(ev=> drop && drop.addEventListener(ev, prevent));
+  drop && drop.addEventListener('drop', e=> add(e.dataTransfer.files));
+  input && input.addEventListener('change', e=> add(e.target.files));
+  upBtn && upBtn.addEventListener('click', async ()=>{
+    if (!queue.length) return; setError(''); let done=0;
+    for (const it of queue){ await new Promise((resolve)=>{ const xhr=new XMLHttpRequest(); var baseEl=document.querySelector('base'); var baseHref=baseEl?baseEl.href:''; xhr.open('POST', baseHref+'upload_person_photo.php'); xhr.responseType='json'; xhr.setRequestHeader('X-Requested-With','XMLHttpRequest'); xhr.onload=function(){ var json=xhr.response && typeof xhr.response==='object' ? xhr.response : null; if (xhr.status>=200 && xhr.status<300 && json && json.ok){ const gal=document.getElementById('personPhotoGallery'); const empty=document.getElementById('personPhotoEmpty'); if (empty) empty.style.display='none'; if (gal && gal.style.display==='none') gal.style.display='grid'; (json.files||[]).forEach(f=>{ if (gal){ const im=document.createElement('img'); im.src=f.url; im.alt=f.filename||''; gal.appendChild(im); } }); it.prog=100; it.error=''; render(); resolve(); } else { const err=(json && json.error)?json.error:('Upload failed (HTTP '+xhr.status+')'); it.error=err; render(); resolve(); } }; xhr.onerror=function(){ it.error='Network error'; render(); resolve(); }; xhr.upload.onprogress=function(e){ if (e.lengthComputable){ it.prog=Math.round((e.loaded/e.total)*100); render(); } }; const form=new FormData(); var csrf=document.querySelector('input[name="csrf"]'); form.append('csrf', csrf?csrf.value:''); var pid=null; try{ pid=new URLSearchParams(location.search).get('id'); }catch(e){} form.append('person_id', pid||''); form.append('photo', it.file, it.file.name); xhr.send(form); }); done++; setStatus('Uploaded '+done+' of '+queue.length); }
+    toast('Photos uploaded'); if (upBtn) upBtn.disabled=true; setStatus('All uploads processed');
+  });
 }

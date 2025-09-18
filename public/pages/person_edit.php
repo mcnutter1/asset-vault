@@ -156,7 +156,7 @@ $auth = ensure_authenticated(); $roles=$auth['roles']??[]; $isAdmin=in_array('ad
       </div>
 
       <div class="col-12">
-        <h2>Files</h2>
+        <h2>Documents</h2>
         <input type="file" name="files[]" multiple>
         <?php if ($files): ?>
           <div class="table-wrap" style="margin-top:6px"><table>
@@ -190,4 +190,3 @@ $auth = ensure_authenticated(); $roles=$auth['roles']??[]; $isAdmin=in_array('ad
     </div>
   </form>
 </div>
-
