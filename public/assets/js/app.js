@@ -595,9 +595,24 @@ async function openCropper(file, opts){
 
   return new Promise((resolve)=>{
     function close(){ modal.classList.remove('show'); URL.revokeObjectURL(url); applyBtn.onclick=null; }
-    applyBtn.onclick = ()=>{
+    function canvasToBlob(canvas, mime, quality){
+      return new Promise((res)=>{
+        if (canvas.toBlob) {
+          canvas.toBlob(b=>res(b), mime, quality);
+        } else {
+          try {
+            const data = canvas.toDataURL(mime, quality).split(',')[1];
+            const bin = atob(data); const len = bin.length; const arr = new Uint8Array(len);
+            for (let i=0;i<len;i++) arr[i] = bin.charCodeAt(i);
+            res(new Blob([arr], {type:mime}));
+          } catch(e) { res(null); }
+        }
+      });
+    }
+    applyBtn.onclick = async ()=>{
+      applyBtn.disabled = true;
       // Compute visible frame rect in source coords
-      clamp();
+      clampRect();
       const sX = Math.max(0, (rx - imgX) * (ow / imgW));
       const sY = Math.max(0, (ry - imgY) * (oh / imgH));
       const sW = Math.max(1, rw * (ow / imgW));
@@ -610,13 +625,13 @@ async function openCropper(file, opts){
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, sX, sY, sW, sH, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((blob)=>{
-        if (!blob) { close(); return resolve(null); }
+      canvasToBlob(canvas, opts.mime, opts.quality).then(blob=>{
+        if (!blob) { applyBtn.disabled=false; close(); return resolve(null); }
         const ext = opts.mime.includes('png') ? 'png' : 'jpg';
         const name = (file.name||'image').replace(/\.(\w+)$/, '') + '-cropped.' + ext;
         const f = new File([blob], name, { type: opts.mime });
         close(); resolve(f);
-      }, opts.mime, opts.quality);
+      }).catch(()=>{ applyBtn.disabled=false; close(); resolve(null); });
     };
     // Show modal last so layout is correct
     modal.classList.add('show');
