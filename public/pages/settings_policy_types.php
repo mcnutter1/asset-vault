@@ -5,12 +5,12 @@ $pdo = Database::get();
 try {
   $pdo->exec("CREATE TABLE IF NOT EXISTS policy_types (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    code VARCHAR(50) NOT NULL UNIQUE,
-    name VARCHAR(100) NOT NULL,
+    code VARCHAR(50) NOT NULL UNIQUE COLLATE utf8mb4_unicode_ci,
+    name VARCHAR(100) NOT NULL COLLATE utf8mb4_unicode_ci,
     sort_order INT NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 } catch (Throwable $e) {
   echo '<div class="small muted">Could not ensure policy_types table exists: '.Util::h($e->getMessage()).'</div>';
 }
@@ -48,7 +48,12 @@ if ($action === 'delete_type') {
   $row = $pdo->prepare('SELECT code FROM policy_types WHERE id=?');
   $row->execute([$id]); $code = $row->fetchColumn();
   if ($code !== false) {
-    $stc = $pdo->prepare('SELECT COUNT(*) FROM policies WHERE policy_type=?');
+    // Ensure safe comparison with explicit collation
+    try {
+      $polColl = $pdo->query("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='policies' AND COLUMN_NAME='policy_type'")->fetchColumn();
+      if (!$polColl) { $polColl = 'utf8mb4_unicode_ci'; }
+    } catch (Throwable $e) { $polColl = 'utf8mb4_unicode_ci'; }
+    $stc = $pdo->prepare("SELECT COUNT(*) FROM policies WHERE policy_type COLLATE $polColl = ? COLLATE $polColl");
     $stc->execute([$code]);
     $count = (int)$stc->fetchColumn();
     // If referenced, just deactivate instead of delete
@@ -57,9 +62,20 @@ if ($action === 'delete_type') {
   }
 }
 
-// Load list (guard for missing table)
+// Determine a common collation for comparing policy_type (ENUM) to policy_types.code (VARCHAR)
+$coll = null;
 try {
-  $types = $pdo->query('SELECT pt.*, (SELECT COUNT(*) FROM policies p WHERE p.policy_type=pt.code) AS use_count FROM policy_types pt ORDER BY pt.sort_order, pt.name')->fetchAll(PDO::FETCH_ASSOC);
+  $polColl = $pdo->query("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='policies' AND COLUMN_NAME='policy_type'")->fetchColumn();
+  $codeColl = $pdo->query("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='policy_types' AND COLUMN_NAME='code'")->fetchColumn();
+  $allowed = ['utf8mb4_unicode_ci','utf8mb4_0900_ai_ci','utf8mb4_general_ci'];
+  foreach ([$polColl, $codeColl] as $c) { if ($c && in_array($c, $allowed, true)) { $coll = $c; break; } }
+  if (!$coll) { $coll = 'utf8mb4_unicode_ci'; }
+} catch (Throwable $e) { $coll = 'utf8mb4_unicode_ci'; }
+
+// Load list (guard for missing table) with explicit collation to avoid mix errors
+try {
+  $sql = "SELECT pt.*, (SELECT COUNT(*) FROM policies p WHERE p.policy_type COLLATE $coll = pt.code COLLATE $coll) AS use_count FROM policy_types pt ORDER BY pt.sort_order, pt.name";
+  $types = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
   $types = [];
   echo '<div class="small muted">policy_types table not available. Please check DB permissions.</div>';

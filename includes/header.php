@@ -117,12 +117,12 @@ $page = $_GET['page'] ?? 'dashboard';
         $pdo = Database::get();
         $pdo->exec("CREATE TABLE IF NOT EXISTS policy_types (
           id INT AUTO_INCREMENT PRIMARY KEY,
-          code VARCHAR(50) NOT NULL UNIQUE,
-          name VARCHAR(100) NOT NULL,
+          code VARCHAR(50) NOT NULL UNIQUE COLLATE utf8mb4_unicode_ci,
+          name VARCHAR(100) NOT NULL COLLATE utf8mb4_unicode_ci,
           sort_order INT NOT NULL DEFAULT 0,
           is_active TINYINT(1) NOT NULL DEFAULT 1,
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         // Seed defaults if empty
         $cnt = (int)$pdo->query('SELECT COUNT(*) FROM policy_types')->fetchColumn();
         if ($cnt === 0) {
