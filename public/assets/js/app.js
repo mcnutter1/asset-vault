@@ -104,6 +104,7 @@ function initDOM(){
   initPersonPhotoModal();
   initPersonViewTabs();
   initPersonIdSlots();
+  initPolicyCoverageFilter();
   initAssetsFilter();
   initNavToggle();
 }
@@ -112,6 +113,25 @@ if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', initDOM);
 } else {
   initDOM();
+}
+
+// Filter coverage list by selected policy on the person edit page
+function initPolicyCoverageFilter(){
+  const pol = document.getElementById('link_policy_id');
+  const cov = document.getElementById('link_policy_cov');
+  if (!(pol && cov)) return;
+  function refresh(){
+    const pid = pol.value;
+    Array.from(cov.options).forEach(opt=>{
+      if (!opt.getAttribute('data-policy')) return; // keep the first generic option
+      opt.hidden = pid && opt.getAttribute('data-policy') !== pid;
+    });
+    // Reset selection if current not visible
+    const sel = cov.querySelector('option:checked');
+    if (sel && sel.hidden){ cov.value=''; }
+  }
+  pol.addEventListener('change', refresh);
+  refresh();
 }
 
 // Photo upload modal logic: dropzone + overlaid input, progress bars, iPhone-friendly

@@ -110,6 +110,49 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_asset_properties();
+  // Ensure People-related additional schema for details and policy links
+  if (!function_exists('av_ensure_policy_people_cov')) {
+    function av_ensure_policy_people_cov(){
+      try {
+        $pdo = Database::get();
+        // Add optional coverage_definition_id to policy_people and relax unique index
+        $col = $pdo->query("SHOW COLUMNS FROM policy_people LIKE 'coverage_definition_id'")->fetch();
+        if (!$col) {
+          $pdo->exec("ALTER TABLE policy_people ADD COLUMN coverage_definition_id INT NULL AFTER role");
+        }
+        // Update unique index to include coverage_definition_id
+        $idx = $pdo->query("SHOW INDEX FROM policy_people WHERE Key_name='uniq_policy_person'")->fetchAll();
+        if ($idx) { $pdo->exec("ALTER TABLE policy_people DROP INDEX uniq_policy_person"); }
+        $pdo->exec("ALTER TABLE policy_people ADD UNIQUE KEY uniq_policy_person (policy_id, person_id, role, coverage_definition_id)");
+      } catch (Throwable $e) { /* ignore */ }
+    }
+  }
+  av_ensure_policy_people_cov();
+  if (!function_exists('av_ensure_person_private_fields')) {
+    function av_ensure_person_private_fields(){
+      try {
+        $pdo = Database::get();
+        $cols = [
+          'dl_number VARCHAR(64) NULL',
+          'dl_state VARCHAR(64) NULL',
+          'dl_expiration DATE NULL',
+          'passport_country VARCHAR(64) NULL',
+          'passport_expiration DATE NULL',
+          'global_entry_number VARCHAR(64) NULL',
+          'global_entry_expiration DATE NULL',
+          'birth_certificate_number VARCHAR(64) NULL',
+          'boat_license_number VARCHAR(64) NULL',
+          'boat_license_expiration DATE NULL'
+        ];
+        foreach ($cols as $def){
+          preg_match('/^(\w+)/',$def,$m); $name=$m[1] ?? null; if (!$name) continue;
+          $has = $pdo->query("SHOW COLUMNS FROM person_private LIKE '".$name."'")->fetch();
+          if (!$has) { $pdo->exec("ALTER TABLE person_private ADD COLUMN $def"); }
+        }
+      } catch (Throwable $e) { /* ignore */ }
+    }
+  }
+  av_ensure_person_private_fields();
   // Ensure People-related schema (and files enum includes 'person')
   if (!function_exists('av_ensure_people')) {
     function av_ensure_people(){

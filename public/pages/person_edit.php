@@ -19,16 +19,22 @@ if (($_POST['action'] ?? '') === 'save'){
     $stmt->execute([$first,$last,$gender,$dob,$notes]);
     $id=(int)$pdo->lastInsertId(); $isEdit=true;
   }
-  // Private block (admin only)
-  $auth = ensure_authenticated(); $roles = $auth['roles']??[]; $isAdmin = in_array('admin',$roles,true);
-  if ($isAdmin){
-    $ssn = trim($_POST['priv_ssn'] ?? '');
-    $dl = trim($_POST['priv_dl'] ?? '');
-    $pp = trim($_POST['priv_passport'] ?? '');
-    $med = trim($_POST['priv_medical'] ?? '');
-    $stmt=$pdo->prepare('INSERT INTO person_private(person_id, ssn, driver_license, passport_number, medical_notes) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE ssn=VALUES(ssn), driver_license=VALUES(driver_license), passport_number=VALUES(passport_number), medical_notes=VALUES(medical_notes)');
-    $stmt->execute([$id,$ssn,$dl,$pp,$med]);
-  }
+  // Private/ID details (stored in person_private)
+  $ssn = trim($_POST['priv_ssn'] ?? '');
+  $dl = trim($_POST['priv_dl'] ?? '');
+  $pp = trim($_POST['priv_passport'] ?? '');
+  $med = trim($_POST['priv_medical'] ?? '');
+  $dl_state = trim($_POST['priv_dl_state'] ?? '');
+  $dl_exp = ($_POST['priv_dl_expiration'] ?? '') ?: null;
+  $pp_country = trim($_POST['priv_passport_country'] ?? '');
+  $pp_exp = ($_POST['priv_passport_expiration'] ?? '') ?: null;
+  $ge_no = trim($_POST['priv_global_entry_number'] ?? '');
+  $ge_exp = ($_POST['priv_global_entry_expiration'] ?? '') ?: null;
+  $bc_no = trim($_POST['priv_birth_certificate_number'] ?? '');
+  $boat_no = trim($_POST['priv_boat_license_number'] ?? '');
+  $boat_exp = ($_POST['priv_boat_license_expiration'] ?? '') ?: null;
+  $stmt=$pdo->prepare('INSERT INTO person_private(person_id, ssn, driver_license, passport_number, medical_notes, dl_state, dl_expiration, passport_country, passport_expiration, global_entry_number, global_entry_expiration, birth_certificate_number, boat_license_number, boat_license_expiration) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE ssn=VALUES(ssn), driver_license=VALUES(driver_license), passport_number=VALUES(passport_number), medical_notes=VALUES(medical_notes), dl_state=VALUES(dl_state), dl_expiration=VALUES(dl_expiration), passport_country=VALUES(passport_country), passport_expiration=VALUES(passport_expiration), global_entry_number=VALUES(global_entry_number), global_entry_expiration=VALUES(global_entry_expiration), birth_certificate_number=VALUES(birth_certificate_number), boat_license_number=VALUES(boat_license_number), boat_license_expiration=VALUES(boat_license_expiration)');
+  $stmt->execute([$id,$ssn,$dl,$pp,$med,$dl_state,$dl_exp,$pp_country,$pp_exp,$ge_no,$ge_exp,$bc_no,$boat_no,$boat_exp]);
   // Simple contact add if provided inline
   if (($_POST['new_contact_value'] ?? '') !== ''){
     $ct = $_POST['new_contact_type'] ?? 'phone';
@@ -64,6 +70,25 @@ if ($isEdit && (($_POST['action'] ?? '')==='unlink_asset')){
   Util::checkCsrf(); $aid=(int)($_POST['asset_id']??0); $pdo->prepare('DELETE FROM person_assets WHERE person_id=? AND asset_id=?')->execute([$id,$aid]); Util::redirect('index.php?page=person_edit&id='.$id);
 }
 
+// Link policy to person (with optional coverage)
+if ($isEdit && (($_POST['action'] ?? '')==='link_policy')){
+  Util::checkCsrf();
+  $pid = (int)($_POST['link_policy_id'] ?? 0);
+  $role = $_POST['link_policy_role'] ?? 'named_insured';
+  $cov = isset($_POST['link_policy_cov']) && $_POST['link_policy_cov']!=='' ? (int)$_POST['link_policy_cov'] : null;
+  $stmt = $pdo->prepare('INSERT IGNORE INTO policy_people(policy_id, person_id, role, coverage_definition_id) VALUES (?,?,?,?)');
+  $stmt->execute([$pid,$id,$role,$cov]);
+  Util::redirect('index.php?page=person_edit&id='.$id);
+}
+// Unlink policy
+if ($isEdit && (($_POST['action'] ?? '')==='unlink_policy')){
+  Util::checkCsrf();
+  $ppid = (int)($_POST['pp_id'] ?? 0);
+  $stmt = $pdo->prepare('DELETE FROM policy_people WHERE id=? AND person_id=?');
+  $stmt->execute([$ppid,$id]);
+  Util::redirect('index.php?page=person_edit&id='.$id);
+}
+
 // Load data
 $person = ['first_name'=>'','last_name'=>'','gender'=>null,'dob'=>null,'notes'=>''];
 if ($isEdit){ $st=$pdo->prepare('SELECT * FROM people WHERE id=?'); $st->execute([$id]); $person=$st->fetch()?:$person; }
@@ -71,8 +96,22 @@ $contacts=[]; if ($isEdit){ $st=$pdo->prepare('SELECT * FROM person_contacts WHE
 $assets=$pdo->query('SELECT id,name FROM assets WHERE is_deleted=0 ORDER BY name')->fetchAll();
 $linkedAssets=[]; if ($isEdit){ $st=$pdo->prepare('SELECT pa.asset_id,a.name,pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? ORDER BY a.name'); $st->execute([$id]); $linkedAssets=$st->fetchAll(); }
 $files=[]; if ($isEdit){ $st=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? ORDER BY uploaded_at DESC"); $st->execute([$id]); $files=$st->fetchAll(); }
+// Policies
+$policies = $pdo->query('SELECT id, insurer, policy_number, policy_type FROM policies ORDER BY insurer, policy_number')->fetchAll();
+$policyCov = [];
+if ($policies) {
+  $ids = implode(',', array_map('intval', array_column($policies,'id')));
+  $rows = $pdo->query('SELECT pc.policy_id, pc.coverage_definition_id, cd.name FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id WHERE pc.policy_id IN ('.$ids.')')->fetchAll();
+  foreach ($rows as $r){ $policyCov[(int)$r['policy_id']][] = ['id'=>(int)$r['coverage_definition_id'],'name'=>$r['name']]; }
+}
+$linkedPolicies = [];
+if ($isEdit) {
+  $st=$pdo->prepare('SELECT pp.id, p.policy_number, p.insurer, p.policy_type, pp.role, pp.coverage_definition_id, cd.name AS coverage_name FROM policy_people pp JOIN policies p ON p.id=pp.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id WHERE pp.person_id=? ORDER BY p.insurer, p.policy_number');
+  $st->execute([$id]);
+  $linkedPolicies = $st->fetchAll();
+}
 // Private
-$auth = ensure_authenticated(); $roles=$auth['roles']??[]; $isAdmin=in_array('admin',$roles,true); $priv=[]; if ($isAdmin && $isEdit){ $st=$pdo->prepare('SELECT * FROM person_private WHERE person_id=?'); $st->execute([$id]); $priv=$st->fetch()?:[]; }
+$auth = ensure_authenticated(); $roles=$auth['roles']??[]; $isAdmin=in_array('admin',$roles,true); $priv=[]; if ($isEdit){ $st=$pdo->prepare('SELECT * FROM person_private WHERE person_id=?'); $st->execute([$id]); $priv=$st->fetch()?:[]; }
 ?>
 
 <?php
@@ -123,6 +162,20 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
 <div class="person-layout">
   <div class="person-main">
     <div class="card tab-panel show" data-tab-panel="overview">
+      <div class="basic-details" style="margin-bottom:12px">
+        <div class="row">
+          <div class="col-3"><label>Gender</label>
+            <?php $genders=['','male','female','nonbinary','other','prefer_not']; ?>
+            <select name="gender" form="personHeaderForm">
+              <?php foreach ($genders as $g): ?>
+                <option value="<?= $g ?>" <?= ($person['gender']??'')===$g?'selected':'' ?>><?= $g===''?'Select…':ucwords(str_replace('_',' ',$g)) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="col-3"><label>Birthdate</label><input type="date" name="dob" value="<?= Util::h($person['dob'] ?? '') ?>" form="personHeaderForm"></div>
+          <div class="col-6"><label>Notes</label><input name="notes" value="<?= Util::h($person['notes'] ?? '') ?>" form="personHeaderForm" placeholder="Notes (optional)"></div>
+        </div>
+      </div>
       <div class="id-section">
         <?php $pidAttr = $isEdit? 'data-person-id="'.$id.'"' : 'data-disabled="1"'; ?>
         <?php
@@ -154,6 +207,29 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
                 <input type="file" accept="image/*" hidden>
               </div>
             </div>
+            <?php if (in_array($k,['dl','passport','ssn','birth','global','boat'])): ?>
+            <div class="id-fields row" style="margin-top:6px">
+              <?php if ($k==='dl'): ?>
+                <div class="col-4"><label>License Number</label><input name="priv_dl" value="<?= Util::h($priv['driver_license'] ?? '') ?>" form="personHeaderForm"></div>
+                <div class="col-4"><label>State Issued</label><input name="priv_dl_state" value="<?= Util::h($priv['dl_state'] ?? '') ?>" form="personHeaderForm" placeholder="e.g., New Jersey"></div>
+                <div class="col-4"><label>Expiration Date</label><input type="date" name="priv_dl_expiration" value="<?= Util::h($priv['dl_expiration'] ?? '') ?>" form="personHeaderForm"></div>
+              <?php elseif ($k==='passport'): ?>
+                <div class="col-4"><label>Passport Number</label><input name="priv_passport" value="<?= Util::h($priv['passport_number'] ?? '') ?>" form="personHeaderForm"></div>
+                <div class="col-4"><label>Country Issued</label><input name="priv_passport_country" value="<?= Util::h($priv['passport_country'] ?? '') ?>" form="personHeaderForm"></div>
+                <div class="col-4"><label>Expiration Date</label><input type="date" name="priv_passport_expiration" value="<?= Util::h($priv['passport_expiration'] ?? '') ?>" form="personHeaderForm"></div>
+              <?php elseif ($k==='ssn'): ?>
+                <div class="col-4"><label>SSN</label><input name="priv_ssn" value="<?= Util::h($priv['ssn'] ?? '') ?>" form="personHeaderForm" placeholder="###-##-####"></div>
+              <?php elseif ($k==='birth'): ?>
+                <div class="col-6"><label>Certificate #</label><input name="priv_birth_certificate_number" value="<?= Util::h($priv['birth_certificate_number'] ?? '') ?>" form="personHeaderForm"></div>
+              <?php elseif ($k==='global'): ?>
+                <div class="col-6"><label>Global Entry #</label><input name="priv_global_entry_number" value="<?= Util::h($priv['global_entry_number'] ?? '') ?>" form="personHeaderForm"></div>
+                <div class="col-6"><label>Expiration Date</label><input type="date" name="priv_global_entry_expiration" value="<?= Util::h($priv['global_entry_expiration'] ?? '') ?>" form="personHeaderForm"></div>
+              <?php elseif ($k==='boat'): ?>
+                <div class="col-6"><label>Boat License #</label><input name="priv_boat_license_number" value="<?= Util::h($priv['boat_license_number'] ?? '') ?>" form="personHeaderForm"></div>
+                <div class="col-6"><label>Expiration Date</label><input type="date" name="priv_boat_license_expiration" value="<?= Util::h($priv['boat_license_expiration'] ?? '') ?>" form="personHeaderForm"></div>
+              <?php endif; ?>
+            </div>
+            <?php endif; ?>
           </div>
         <?php endforeach; ?>
       </div>
@@ -250,6 +326,58 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
         <div class="col-4"><label>Role</label><select name="link_asset_role" form="personHeaderForm"><option>owner</option><option>user</option><option>resident</option><option>other</option></select></div>
         <div class="col-12 actions"><button class="btn sm" type="submit" form="personHeaderForm">Link</button></div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="section-head"><h2>Policies</h2></div>
+      <form method="post" class="row" id="policyLinkForm">
+        <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+        <input type="hidden" name="action" value="link_policy">
+        <div class="col-6"><label>Policy</label>
+          <select name="link_policy_id" id="link_policy_id">
+            <option value="">--</option>
+            <?php foreach ($policies as $p): $label = trim(($p['insurer']?:'').' '.$p['policy_number']); ?>
+              <option value="<?= (int)$p['id'] ?>" data-type="<?= Util::h($p['policy_type']) ?>"><?= Util::h($label) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="col-4"><label>Coverage</label>
+          <select name="link_policy_cov" id="link_policy_cov">
+            <option value="">Whole policy</option>
+            <?php foreach ($policyCov as $pid=>$list): foreach ($list as $c): ?>
+              <option value="<?= (int)$c['id'] ?>" data-policy="<?= (int)$pid ?>"><?= Util::h($c['name']) ?></option>
+            <?php endforeach; endforeach; ?>
+          </select>
+          <div class="small muted">Filtered to selected policy</div>
+        </div>
+        <div class="col-2"><label>Role</label>
+          <select name="link_policy_role"><option>named_insured</option><option>driver</option><option>resident</option><option>listed</option><option>other</option></select>
+        </div>
+        <div class="col-12 actions"><button class="btn sm" type="submit">Link</button></div>
+      </form>
+
+      <?php if ($linkedPolicies): ?>
+        <div class="table-wrap" style="margin-top:6px"><table>
+          <thead><tr><th>Policy</th><th>Role</th><th>Coverage</th><th></th></tr></thead>
+          <tbody>
+            <?php foreach ($linkedPolicies as $lp): $lab = trim(($lp['insurer']?:'').' '.$lp['policy_number']); ?>
+              <tr>
+                <td><?= Util::h($lab) ?></td>
+                <td><?= Util::h($lp['role']) ?></td>
+                <td><?= Util::h($lp['coverage_name'] ?? '—') ?></td>
+                <td>
+                  <form method="post" onsubmit="return confirmAction('Unlink policy?')">
+                    <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                    <input type="hidden" name="action" value="unlink_policy">
+                    <input type="hidden" name="pp_id" value="<?= (int)$lp['id'] ?>">
+                    <button class="btn sm ghost danger">🗑️</button>
+                  </form>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table></div>
+      <?php endif; ?>
     </div>
   </div>
 </div>

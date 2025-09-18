@@ -8,7 +8,7 @@ $name = trim(($p['first_name']??'').' '.($p['last_name']??''));
 $contacts=$pdo->prepare('SELECT * FROM person_contacts WHERE person_id=? ORDER BY is_primary DESC, id DESC'); $contacts->execute([$id]); $contacts=$contacts->fetchAll();
 $assets=$pdo->prepare('SELECT a.id,a.name,pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? ORDER BY a.name'); $assets->execute([$id]); $assets=$assets->fetchAll();
 $files=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? ORDER BY uploaded_at DESC"); $files->execute([$id]); $files=$files->fetchAll();
-$auth=ensure_authenticated(); $roles=$auth['roles']??[]; $isAdmin=in_array('admin',$roles,true); $priv=[]; if ($isAdmin){ $s=$pdo->prepare('SELECT * FROM person_private WHERE person_id=?'); $s->execute([$id]); $priv=$s->fetch()?:[]; }
+$auth=ensure_authenticated(); $roles=$auth['roles']??[]; $isAdmin=in_array('admin',$roles,true); $priv=[]; $s=$pdo->prepare('SELECT * FROM person_private WHERE person_id=?'); $s->execute([$id]); $priv=$s->fetch()?:[];
 
 function findByCaption($files,$cap){ foreach($files as $f){ if (strtolower(trim($f['caption'] ?? ''))===strtolower($cap)) return $f; } return null; }
 function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if(!$ts) return null; $m=(int)date('n',$ts); $d=(int)date('j',$ts); $y=(int)date('Y'); $next=strtotime($y.'-'.$m.'-'.$d); if($next<strtotime('today')) $next=strtotime(($y+1).'-'.$m.'-'.$d); $diff=(int)ceil(($next - strtotime('today'))/86400); return $diff; }
@@ -49,6 +49,7 @@ $pidx = abs(crc32($name ?: (string)$id)) % count($pal); $bg=$pal[$pidx][0]; $fg=
           ['key'=>'global','label'=>'Global Entry'],
           ['key'=>'boat','label'=>'Boat License'],
         ];
+        function mask_mid($s){ $s=preg_replace('/\D+/','',$s); if(strlen($s)<=4) return $s; return str_repeat('•', max(0, strlen($s)-4)).substr($s,-4); }
       ?>
       <?php foreach ($defs as $def): $k=$def['key']; $front=findByCaption($files, $k.'_front'); $back=findByCaption($files, $k.'_back'); ?>
         <div class="id-row">
@@ -64,6 +65,27 @@ $pidx = abs(crc32($name ?: (string)$id)) % count($pal); $bg=$pal[$pidx][0]; $fg=
                 <img class="id-prev" src="<?= Util::baseUrl('file.php?id='.(int)$back['id']) ?>" alt="Back">
               <?php else: ?><div class="dz"><div class="dz-title small muted">No file</div></div><?php endif; ?>
             </div>
+          </div>
+          <div class="id-fields row" style="margin-top:6px">
+            <?php if ($k==='dl'): ?>
+              <div class="col-4"><label>License Number</label><div><?= Util::h(mask_mid($priv['driver_license'] ?? '')) ?></div></div>
+              <div class="col-4"><label>State Issued</label><div><?= Util::h($priv['dl_state'] ?? '') ?></div></div>
+              <div class="col-4"><label>Expiration</label><div><?= Util::h($priv['dl_expiration'] ?? '') ?></div></div>
+            <?php elseif ($k==='passport'): ?>
+              <div class="col-4"><label>Passport Number</label><div><?= Util::h(mask_mid($priv['passport_number'] ?? '')) ?></div></div>
+              <div class="col-4"><label>Country</label><div><?= Util::h($priv['passport_country'] ?? '') ?></div></div>
+              <div class="col-4"><label>Expiration</label><div><?= Util::h($priv['passport_expiration'] ?? '') ?></div></div>
+            <?php elseif ($k==='ssn'): ?>
+              <div class="col-4"><label>SSN</label><div><?= Util::h(mask_mid($priv['ssn'] ?? '')) ?></div></div>
+            <?php elseif ($k==='birth'): ?>
+              <div class="col-6"><label>Certificate #</label><div><?= Util::h($priv['birth_certificate_number'] ?? '') ?></div></div>
+            <?php elseif ($k==='global'): ?>
+              <div class="col-6"><label>Global Entry #</label><div><?= Util::h(mask_mid($priv['global_entry_number'] ?? '')) ?></div></div>
+              <div class="col-6"><label>Expiration</label><div><?= Util::h($priv['global_entry_expiration'] ?? '') ?></div></div>
+            <?php elseif ($k==='boat'): ?>
+              <div class="col-6"><label>Boat License #</label><div><?= Util::h(mask_mid($priv['boat_license_number'] ?? '')) ?></div></div>
+              <div class="col-6"><label>Expiration</label><div><?= Util::h($priv['boat_license_expiration'] ?? '') ?></div></div>
+            <?php endif; ?>
           </div>
         </div>
       <?php endforeach; ?>
@@ -117,4 +139,3 @@ $pidx = abs(crc32($name ?: (string)$id)) % count($pal); $bg=$pal[$pidx][0]; $fg=
     <?php endif; ?>
   </div>
 </div>
-
