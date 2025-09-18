@@ -147,12 +147,14 @@ function initPhotoModal(){
 
   let queue = [];
 
-  function addFiles(fileList){
+  async function addFiles(fileList){
     const files = Array.from(fileList || []);
-    files.forEach(f=>{
-      if (!f.type || !/^image\//i.test(f.type)) return;
-      queue.push({ file:f, id: Math.random().toString(36).slice(2), prog:0, error:'', done:false });
-    });
+    for (const f of files){
+      if (!f.type || !/^image\//i.test(f.type)) continue;
+      const cf = await openCropper(f, { aspect:'free' });
+      const use = cf || f;
+      queue.push({ file: use, id: Math.random().toString(36).slice(2), prog:0, error:'', done:false });
+    }
     renderQueue();
   }
   function renderQueue(){
@@ -489,6 +491,7 @@ function initFileActions(){
         // Remove thumbnail if present
         const wrap = btn.closest('[data-file-wrap]');
         if (wrap) wrap.remove();
+        const tr = btn.closest('tr'); if (tr) tr.remove();
         toast('Done');
       }).catch(err=>{
         toast(err.message||'Error');
@@ -519,65 +522,86 @@ async function openCropper(file, opts){
   stage.innerHTML = '';
   const img = document.createElement('img');
   stage.appendChild(img);
+  const rect = document.createElement('div'); rect.className='crop-rect'; stage.appendChild(rect);
+  const hNW=document.createElement('div'); hNW.className='crop-handle nw';
+  const hNE=document.createElement('div'); hNE.className='crop-handle ne';
+  const hSW=document.createElement('div'); hSW.className='crop-handle sw';
+  const hSE=document.createElement('div'); hSE.className='crop-handle se';
+  rect.appendChild(hNW); rect.appendChild(hNE); rect.appendChild(hSW); rect.appendChild(hSE);
   let url = URL.createObjectURL(file);
   img.src = url;
-  let ow=0, oh=0; let cw=0, ch=0; let cover=1; let scale=1; let imgW=0, imgH=0; let imgX=0, imgY=0; let dragging=false; let startX=0, startY=0; let startImgX=0, startImgY=0;
+  let ow=0, oh=0; let cw=0, ch=0; let imgW=0, imgH=0; let imgX=0, imgY=0; let scale=1;
+  // Crop rectangle in stage coords
+  let rx=0, ry=0, rw=0, rh=0; let dragMode=null; let startX=0, startY=0; let startRX=0, startRY=0, startRW=0, startRH=0;
 
-  function setAspect(){
-    cw = stage.clientWidth;
-    let ar = aspectSel.value;
-    if (ar==='free') { ch = stage.clientHeight; }
-    else { try { const r=eval(ar); ch = Math.round(cw / r); } catch(e){ ch = stage.clientHeight; } }
-    stage.style.height = ch + 'px';
-    fit();
-  }
-  function fit(){
-    if (!ow || !oh) return;
+  function layout(){
     cw = stage.clientWidth; ch = stage.clientHeight;
-    cover = Math.max(cw/ow, ch/oh);
-    const oldW = imgW, oldH = imgH;
-    const centerX = cw/2, centerY = ch/2;
-    const relX = oldW? (centerX - imgX) / oldW : 0.5;
-    const relY = oldH? (centerY - imgY) / oldH : 0.5;
-    imgW = ow * cover * scale;
-    imgH = oh * cover * scale;
-    imgX = centerX - relX * imgW;
-    imgY = centerY - relY * imgH;
-    applyTransform();
-  }
-  function applyTransform(){
+    // Fit image into stage
+    const scaleToFit = Math.min(cw/ow, ch/oh);
+    imgW = ow * scaleToFit * scale;
+    imgH = oh * scaleToFit * scale;
+    imgX = (cw - imgW)/2;
+    imgY = (ch - imgH)/2;
     img.style.width = imgW + 'px';
     img.style.height = imgH + 'px';
     img.style.left = imgX + 'px';
     img.style.top = imgY + 'px';
+    // Default crop rect to 80% of image area honoring aspect
+    let w = imgW * 0.8, h = imgH * 0.8;
+    const ar = aspectSel.value;
+    if (ar !== 'free') { try { const r=eval(ar); if (w/h > r) w = h*r; else h = w/r; } catch(e){} }
+    rw = w; rh = h; rx = imgX + (imgW - rw)/2; ry = imgY + (imgH - rh)/2;
+    applyRect();
   }
-  function clamp(){
-    // Keep image covering the frame to avoid gaps
-    if (imgW <= cw) imgX = (cw - imgW)/2; else { if (imgX > 0) imgX = 0; if (imgX + imgW < cw) imgX = cw - imgW; }
-    if (imgH <= ch) imgY = (ch - imgH)/2; else { if (imgY > 0) imgY = 0; if (imgY + imgH < ch) imgY = ch - imgH; }
+  function applyRect(){ rect.style.left = rx+'px'; rect.style.top = ry+'px'; rect.style.width = rw+'px'; rect.style.height = rh+'px'; }
+  function clampRect(){
+    // Constrain rect within image bounds
+    const minSize = 40;
+    if (rw < minSize) rw = minSize; if (rh < minSize) rh = minSize;
+    if (rx < imgX) rx = imgX; if (ry < imgY) ry = imgY;
+    if (rx + rw > imgX + imgW) rx = imgX + imgW - rw;
+    if (ry + rh > imgY + imgH) ry = imgY + imgH - rh;
   }
-
-  img.ondblclick = ()=>{ scale = 1; fit(); };
-  img.onpointerdown = (e)=>{ dragging=true; startX=e.clientX; startY=e.clientY; startImgX=imgX; startImgY=imgY; img.setPointerCapture(e.pointerId); };
-  img.onpointermove = (e)=>{ if(!dragging) return; const dx=e.clientX-startX, dy=e.clientY-startY; imgX=startImgX+dx; imgY=startImgY+dy; clamp(); applyTransform(); };
-  img.onpointerup = img.onpointercancel = ()=>{ dragging=false; };
-  zoom.oninput = ()=>{ scale = parseFloat(zoom.value||'1'); fit(); };
+  function onDragStart(mode, e){ dragMode=mode; startX=e.clientX; startY=e.clientY; startRX=rx; startRY=ry; startRW=rw; startRH=rh; e.preventDefault(); }
+  function onDragMove(e){ if (!dragMode) return; const dx=e.clientX-startX, dy=e.clientY-startY; const ar=aspectSel.value; if (dragMode==='move'){ rx=startRX+dx; ry=startRY+dy; } else {
+      let nrw=startRW, nrh=startRH, nrx=startRX, nry=startRY; const ratio=(ar==='free')? null : (function(){ try { return eval(ar); } catch(e){ return null; } })();
+      if (dragMode==='nw'){ nrw=startRW-dx; nrh=startRH-dy; nrx=startRX+dx; nry=startRY+dy; }
+      if (dragMode==='ne'){ nrw=startRW+dx; nrh=startRH-dy; nry=startRY+dy; }
+      if (dragMode==='sw'){ nrw=startRW-dx; nrh=startRH+dy; nrx=startRX+dx; }
+      if (dragMode==='se'){ nrw=startRW+dx; nrh=startRH+dy; }
+      if (ratio){ // lock aspect
+        if (Math.abs(dx) > Math.abs(dy)) { nrh = nrw/ratio; } else { nrw = nrh*ratio; }
+        if (dragMode==='nw'){ nrx = startRX + (startRW - nrw); nry = startRY + (startRH - nrh); }
+        if (dragMode==='ne'){ nry = startRY + (startRH - nrh); }
+        if (dragMode==='sw'){ nrx = startRX + (startRW - nrw); }
+      }
+      rw = nrw; rh = nrh; rx = nrx; ry = nry;
+    }
+    clampRect(); applyRect(); }
+  function onDragEnd(){ dragMode=null; }
+  rect.addEventListener('pointerdown', (e)=>{ if (e.target.classList.contains('crop-handle')) return; onDragStart('move', e); });
+  hNW.addEventListener('pointerdown', e=> onDragStart('nw', e));
+  hNE.addEventListener('pointerdown', e=> onDragStart('ne', e));
+  hSW.addEventListener('pointerdown', e=> onDragStart('sw', e));
+  hSE.addEventListener('pointerdown', e=> onDragStart('se', e));
+  stage.addEventListener('pointermove', onDragMove);
+  stage.addEventListener('pointerup', onDragEnd); stage.addEventListener('pointercancel', onDragEnd);
+  aspectSel.addEventListener('change', ()=> layout());
+  zoom.oninput = ()=>{ scale = parseFloat(zoom.value||'1'); layout(); };
 
   await new Promise((resolve)=>{ img.onload = resolve; });
   ow = img.naturalWidth; oh = img.naturalHeight;
-  setAspect();
+  layout();
 
   return new Promise((resolve)=>{
     function close(){ modal.classList.remove('show'); URL.revokeObjectURL(url); applyBtn.onclick=null; }
     applyBtn.onclick = ()=>{
       // Compute visible frame rect in source coords
       clamp();
-      const sx = Math.max(0, (0 - imgX) * (ow / imgW));
-      const sy = Math.max(0, (0 - imgY) * (oh / imgH));
-      const sw = Math.min(cw, imgX + imgW) - Math.max(0, imgX);
-      const sh = Math.min(ch, imgY + imgH) - Math.max(0, imgY);
-      const sW = sw * (ow / imgW);
-      const sH = sh * (oh / imgH);
+      const sX = Math.max(0, (rx - imgX) * (ow / imgW));
+      const sY = Math.max(0, (ry - imgY) * (oh / imgH));
+      const sW = Math.max(1, rw * (ow / imgW));
+      const sH = Math.max(1, rh * (oh / imgH));
       const maxSide = parseInt(maxSel.value || '1600', 10);
       const scaleOut = Math.min(1, maxSide / Math.max(sW, sH));
       const canvas = document.createElement('canvas');
@@ -585,7 +609,7 @@ async function openCropper(file, opts){
       canvas.height = Math.max(1, Math.round(sH * scaleOut));
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, sx, sy, sW, sH, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, sX, sY, sW, sH, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob)=>{
         if (!blob) { close(); return resolve(null); }
         const ext = opts.mime.includes('png') ? 'png' : 'jpg';
@@ -616,7 +640,7 @@ function initPersonPhotoModal(){
   const captionEl = document.getElementById('pp_caption');
   const personIdEl = document.getElementById('pp_person_id');
   let queue = [];
-  function add(files){ Array.from(files||[]).forEach(f=>{ if (!/^image\//i.test(f.type)) return; queue.push({file:f,id:Math.random().toString(36).slice(2),prog:0,error:''}); }); render(); }
+  async function add(files){ for (const f of Array.from(files||[])){ if (!/^image\//i.test(f.type)) continue; const cf = await openCropper(f,{aspect:'free'}); queue.push({file:(cf||f),id:Math.random().toString(36).slice(2),prog:0,error:''}); } render(); }
   function render(){ if(!list) return; list.innerHTML=''; queue.forEach(it=>{ const row=document.createElement('div'); row.className='upl-row'; const left=document.createElement('div'); left.className='upl-left'; const icon=document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️'; const meta=document.createElement('div'); meta.className='upl-meta'; const name=document.createElement('div'); name.className='upl-name'; name.textContent=it.file.name; const size=document.createElement('div'); size.className='upl-size'; size.textContent=prettySize(it.file.size); meta.appendChild(name); meta.appendChild(size); left.appendChild(icon); left.appendChild(meta); const x=document.createElement('button'); x.type='button'; x.className='upl-x'; x.textContent='✕'; x.onclick=()=>{ queue=queue.filter(q=>q.id!==it.id); render(); }; const bar=document.createElement('div'); bar.className='upl-bar'; const fill=document.createElement('div'); fill.className='upl-fill'; fill.style.width=(it.prog||0)+'%'; bar.appendChild(fill); const err=document.createElement('div'); err.className='upl-err'; if (it.error) err.textContent=it.error; row.appendChild(left); row.appendChild(x); row.appendChild(bar); row.appendChild(err); list.appendChild(row); }); if (upBtn) upBtn.disabled = queue.length===0; }
   function render(){ if(!list) return; list.innerHTML=''; queue.forEach(it=>{ const row=document.createElement('div'); row.className='upl-row'; const left=document.createElement('div'); left.className='upl-left'; const icon=document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️'; const meta=document.createElement('div'); meta.className='upl-meta'; const name=document.createElement('div'); name.className='upl-name'; name.textContent=it.file.name; const size=document.createElement('div'); size.className='upl-size'; size.textContent=prettySize(it.file.size); meta.appendChild(name); meta.appendChild(size); left.appendChild(icon); left.appendChild(meta); const crop=document.createElement('button'); crop.type='button'; crop.className='upl-x'; crop.textContent='✂'; crop.title='Crop & resize'; crop.onclick=async ()=>{ const nf=await openCropper(it.file,{aspect:'free'}); if(nf){ it.file=nf; render(); } }; const x=document.createElement('button'); x.type='button'; x.className='upl-x'; x.textContent='✕'; x.onclick=()=>{ queue=queue.filter(q=>q.id!==it.id); render(); }; const bar=document.createElement('div'); bar.className='upl-bar'; const fill=document.createElement('div'); fill.className='upl-fill'; fill.style.width=(it.prog||0)+'%'; bar.appendChild(fill); const err=document.createElement('div'); err.className='upl-err'; if (it.error) err.textContent=it.error; row.appendChild(left); row.appendChild(crop); row.appendChild(x); row.appendChild(bar); row.appendChild(err); list.appendChild(row); }); if (upBtn) upBtn.disabled = queue.length===0; }
   function setError(msg){ if(!errBox) return; if (msg){ errBox.textContent=msg; errBox.style.display='block'; } else { errBox.textContent=''; errBox.style.display='none'; } }

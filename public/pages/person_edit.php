@@ -198,14 +198,20 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
             <div class="id-slots">
               <div class="id-slot" data-id-slot data-caption="<?= Util::h($k.'_front') ?>" <?= $pidAttr ?>>
                 <?php if ($front && strpos($front['mime_type'],'image/')===0): ?>
-                  <img class="id-prev" src="<?= Util::baseUrl('file.php?id='.(int)$front['id']) ?>" alt="Front">
+                  <div class="thumb" data-file-wrap>
+                    <button class="thumb-trash" type="button" title="Move to Trash" data-file-trash data-file-id="<?= (int)$front['id'] ?>">🗑️</button>
+                    <img class="id-prev" data-file-id="<?= (int)$front['id'] ?>" data-filename="<?= Util::h($front['filename']) ?>" data-size="<?= (int)$front['size'] ?>" data-uploaded="<?= Util::h($front['uploaded_at']) ?>" src="<?= Util::baseUrl('file.php?id='.(int)$front['id']) ?>" alt="Front">
+                  </div>
                 <?php endif; ?>
                 <div class="dz"><div class="dz-icon">⬆️</div><div class="dz-title">Drop front side here</div><div class="dz-sub">or <span class="link">Browse files</span></div></div>
                 <input type="file" accept="image/*" hidden>
               </div>
               <div class="id-slot" data-id-slot data-caption="<?= Util::h($k.'_back') ?>" <?= $pidAttr ?>>
                 <?php if ($back && strpos($back['mime_type'],'image/')===0): ?>
-                  <img class="id-prev" src="<?= Util::baseUrl('file.php?id='.(int)$back['id']) ?>" alt="Back">
+                  <div class="thumb" data-file-wrap>
+                    <button class="thumb-trash" type="button" title="Move to Trash" data-file-trash data-file-id="<?= (int)$back['id'] ?>">🗑️</button>
+                    <img class="id-prev" data-file-id="<?= (int)$back['id'] ?>" data-filename="<?= Util::h($back['filename']) ?>" data-size="<?= (int)$back['size'] ?>" data-uploaded="<?= Util::h($back['uploaded_at']) ?>" src="<?= Util::baseUrl('file.php?id='.(int)$back['id']) ?>" alt="Back">
+                  </div>
                 <?php endif; ?>
                 <div class="dz"><div class="dz-icon">⬆️</div><div class="dz-title">Drop back side here</div><div class="dz-sub">or <span class="link">Browse files</span></div></div>
                 <input type="file" accept="image/*" hidden>
@@ -256,10 +262,17 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
       </div>
       <?php if ($files): ?>
         <div class="table-wrap" style="margin-top:6px"><table>
-          <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Caption</th></tr></thead>
+          <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Caption</th><th></th></tr></thead>
           <tbody>
             <?php foreach ($files as $f): ?>
-              <tr><td><a href="<?= Util::baseUrl('file.php?id='.(int)$f['id']) ?>" target="_blank"><?= Util::h($f['filename']) ?></a></td><td><?= Util::h($f['mime_type']) ?></td><td><?= number_format($f['size']) ?></td><td><?= Util::h($f['uploaded_at']) ?></td><td><?= Util::h($f['caption'] ?? '') ?></td></tr>
+              <tr>
+                <td><a href="<?= Util::baseUrl('file.php?id='.(int)$f['id']) ?>" target="_blank" data-file-id="<?= (int)$f['id'] ?>" data-filename="<?= Util::h($f['filename']) ?>" data-size="<?= (int)$f['size'] ?>" data-uploaded="<?= Util::h($f['uploaded_at']) ?>"><?= Util::h($f['filename']) ?></a></td>
+                <td><?= Util::h($f['mime_type']) ?></td>
+                <td><?= number_format($f['size']) ?></td>
+                <td><?= Util::h($f['uploaded_at']) ?></td>
+                <td><?= Util::h($f['caption'] ?? '') ?></td>
+                <td><button class="btn sm ghost danger" type="button" title="Trash" data-file-trash data-file-id="<?= (int)$f['id'] ?>">🗑️</button></td>
+              </tr>
             <?php endforeach; ?>
           </tbody>
         </table></div>
