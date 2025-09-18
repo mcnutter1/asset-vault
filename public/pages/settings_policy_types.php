@@ -1,6 +1,20 @@
 <?php
 $pdo = Database::get();
 
+// Ensure table exists locally as a safety net (in case header ensure didn't run)
+try {
+  $pdo->exec("CREATE TABLE IF NOT EXISTS policy_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch (Throwable $e) {
+  echo '<div class="small muted">Could not ensure policy_types table exists: '.Util::h($e->getMessage()).'</div>';
+}
+
 function slugify($s){ $s=strtolower(trim($s)); $s=preg_replace('/[^a-z0-9]+/','_', $s); $s=trim($s,'_'); return $s ?: 'type'; }
 
 // Handle actions
@@ -34,15 +48,22 @@ if ($action === 'delete_type') {
   $row = $pdo->prepare('SELECT code FROM policy_types WHERE id=?');
   $row->execute([$id]); $code = $row->fetchColumn();
   if ($code !== false) {
-    $count = (int)$pdo->prepare('SELECT COUNT(*) FROM policies WHERE policy_type=?')->execute([$code]) ?: 0;
+    $stc = $pdo->prepare('SELECT COUNT(*) FROM policies WHERE policy_type=?');
+    $stc->execute([$code]);
+    $count = (int)$stc->fetchColumn();
     // If referenced, just deactivate instead of delete
     if ($count > 0) { $pdo->prepare('UPDATE policy_types SET is_active=0 WHERE id=?')->execute([$id]); echo '<div class="small">Type is in use; deactivated instead of deleting.</div>'; }
     else { $pdo->prepare('DELETE FROM policy_types WHERE id=?')->execute([$id]); echo '<div class="small">Type deleted.</div>'; }
   }
 }
 
-// Load list
-$types = $pdo->query('SELECT pt.*, (SELECT COUNT(*) FROM policies p WHERE p.policy_type=pt.code) AS use_count FROM policy_types pt ORDER BY pt.sort_order, pt.name')->fetchAll(PDO::FETCH_ASSOC);
+// Load list (guard for missing table)
+try {
+  $types = $pdo->query('SELECT pt.*, (SELECT COUNT(*) FROM policies p WHERE p.policy_type=pt.code) AS use_count FROM policy_types pt ORDER BY pt.sort_order, pt.name')->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+  $types = [];
+  echo '<div class="small muted">policy_types table not available. Please check DB permissions.</div>';
+}
 ?>
 
 <div class="settings-section">
@@ -96,4 +117,3 @@ $types = $pdo->query('SELECT pt.*, (SELECT COUNT(*) FROM policies p WHERE p.poli
     <div class="small muted">Deleting a type that is in use will deactivate it instead.</div>
   <?php endif; ?>
 </div>
-
