@@ -148,6 +148,9 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
     </div>
   </div>
   <div class="ph-actions">
+    <?php if ($isEdit): ?>
+      <button class="btn sm outline" type="button" data-modal-open="personPhotoModal">Add Photos</button>
+    <?php endif; ?>
     <a class="btn ghost sm" href="<?= Util::baseUrl('index.php?page=people') ?>">Back</a>
     <button class="btn sm" type="submit" form="personHeaderForm">Save</button>
   </div>
@@ -163,6 +166,7 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
   <div class="person-main">
     <div class="card tab-panel show" data-tab-panel="overview">
       <div class="basic-details" style="margin-bottom:12px">
+        <div class="section-head"><h2>General Info</h2></div>
         <div class="row">
           <div class="col-3"><label>Gender</label>
             <?php $genders=['','male','female','nonbinary','other','prefer_not']; ?>
@@ -243,6 +247,11 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
             <div class="dz"><div class="dz-icon">⬆️</div><div class="dz-title">Drop files here</div><div class="dz-sub">or <span class="link">Browse files</span></div></div>
             <input type="file" multiple hidden>
           </div>
+          <?php if ($isEdit): ?>
+          <div class="actions" style="margin-top:8px">
+            <button class="btn sm outline" type="button" data-modal-open="personPhotoModal">Open uploader…</button>
+          </div>
+          <?php endif; ?>
         </div>
       </div>
       <?php if ($files): ?>
@@ -381,3 +390,32 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
     </div>
   </div>
 </div>
+
+<!-- Reusable photo uploader modal (person) -->
+<?php if ($isEdit): ?>
+<div class="modal-backdrop" id="personPhotoModal">
+  <div class="modal" style="width:min(640px, 95vw)">
+    <div class="head"><strong>Upload and attach photos</strong><button class="x" data-modal-close="personPhotoModal">✕</button></div>
+    <div class="body">
+      <div class="uploader">
+        <div class="dropzone" id="pp_drop">
+          <input id="pp_input" type="file" accept="image/*" multiple aria-label="Choose photos">
+          <div class="dz-inner">
+            <div class="dz-icon">📷</div>
+            <div class="dz-title"><label for="pp_input" style="cursor:pointer">Click to upload</label> or drag and drop</div>
+            <div class="dz-sub">Maximum file size 50 MB. JPEG/PNG/HEIC supported.</div>
+          </div>
+        </div>
+        <div id="pp_error" class="uploader-error" style="display:none"></div>
+        <div id="pp_list" class="uploader-list"></div>
+        <div id="pp_status" class="uploader-status" style="display:none"></div>
+      </div>
+    </div>
+    <div class="foot" style="justify-content: space-between;">
+      <button class="btn ghost" type="button" data-modal-close="personPhotoModal">Cancel</button>
+      <button class="btn" type="button" id="pp_upload" disabled>Attach files</button>
+    </div>
+  </div>
+  <input type="hidden" id="pp_person_id" value="<?= (int)$id ?>">
+</div>
+<?php endif; ?>

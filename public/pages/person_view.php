@@ -40,6 +40,16 @@ $pidx = abs(crc32($name ?: (string)$id)) % count($pal); $bg=$pal[$pidx][0]; $fg=
 <div class="person-layout">
   <div class="person-main">
     <div class="card tab-panel show" data-tab-panel="overview">
+      <div class="basic-details" style="margin-bottom:12px">
+        <div class="section-head"><h2>General Info</h2></div>
+        <div class="row">
+          <div class="col-6"><label>Birthday</label>
+            <div><strong><?= Util::h($p['dob'] ?? '') ?></strong></div>
+            <?php $d=daysUntilBirthday($p['dob']??null); if($d!==null): ?><div class="small muted">Birthday in <?= (int)$d ?> days</div><?php endif; ?>
+          </div>
+          <div class="col-6"><label>Gender</label><div><?= Util::h(ucwords(str_replace('_',' ',$p['gender'] ?? ''))) ?></div></div>
+        </div>
+      </div>
       <?php
         $defs = [
           ['key'=>'dl','label'=>"Driver's License"],

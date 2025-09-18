@@ -92,14 +92,14 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, H
 .id-section { display:grid; gap:18px; }
 .id-row { display:grid; gap:8px; }
 .id-title { font-weight:800; color:#111827; }
-.id-slots { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
-.id-slot { position:relative; min-height:160px; border:1px dashed #d1d5db; border-radius:12px; background:#fafafa; display:grid; place-items:center; overflow:hidden; }
+.id-slots { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:12px; }
+.id-slot { position:relative; min-height:130px; border:1px dashed #d8dce3; border-radius:12px; background:#fbfbfe; display:grid; place-items:center; overflow:hidden; }
 .id-slot .dz { text-align:center; color:#374151; }
-.id-slot .dz-title { font-weight:700; }
+.id-slot .dz-title { font-weight:700; font-size:14px; }
 .id-slot .dz-sub { font-size:12px; color: var(--muted); }
 .id-slot .dz .link { color:#2563eb; text-decoration:underline; cursor:pointer; }
 .id-slot input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; }
-.id-prev { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.id-prev { position:absolute; inset:auto; max-width:92%; max-height:92%; object-fit:contain; border-radius:10px; border:1px solid var(--border); box-shadow: 0 6px 18px rgba(17,24,39,0.08); }
 .id-slot:hover { background:#f4f6ff; border-color:#c7d2fe; }
 
 /* Tab panels */
