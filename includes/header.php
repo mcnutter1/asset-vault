@@ -26,6 +26,11 @@ $page = $_GET['page'] ?? 'dashboard';
         if (!$col) {
           $pdo->exec("ALTER TABLE files ADD COLUMN is_trashed TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN trashed_at TIMESTAMP NULL DEFAULT NULL");
         }
+        // Ensure caption column exists (used to label person document slots)
+        $cap = $pdo->query("SHOW COLUMNS FROM files LIKE 'caption'")->fetch();
+        if (!$cap) {
+          $pdo->exec("ALTER TABLE files ADD COLUMN caption VARCHAR(255) NULL AFTER content");
+        }
       } catch (Throwable $e) {
         // ignore; schema may be read-only — features will degrade gracefully
       }

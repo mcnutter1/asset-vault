@@ -36,17 +36,19 @@ if (!empty($_FILES['photos'])){
 if (!$files) _out(400, ['ok'=>false,'error'=>'No files received']);
 
 $inserted = [];
+$caption = trim($_POST['caption'] ?? '');
 foreach ($files as $f){
   if ((int)($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK){ _out(400,['ok'=>false,'error'=>'Upload error']); }
   $tmp=$f['tmp_name']; $orig=$f['name']; $mime=$f['type'] ?: 'application/octet-stream';
   $content=@file_get_contents($tmp); if ($content===false) _out(400,['ok'=>false,'error'=>'Could not read file']);
   $size=strlen($content);
-  $stmt=$pdo->prepare("INSERT INTO files(entity_type, entity_id, filename, mime_type, size, content) VALUES ('person', ?, ?, ?, ?, ?)");
+  $stmt=$pdo->prepare("INSERT INTO files(entity_type, entity_id, filename, mime_type, size, content, caption) VALUES ('person', ?, ?, ?, ?, ?, ?)");
   $stmt->bindValue(1,$personId, PDO::PARAM_INT);
   $stmt->bindValue(2,$orig);
   $stmt->bindValue(3,$mime);
   $stmt->bindValue(4,$size, PDO::PARAM_INT);
   $stmt->bindParam(5,$content, PDO::PARAM_LOB);
+  $stmt->bindValue(6,$caption !== '' ? $caption : null, PDO::PARAM_STR);
   $stmt->execute();
   $fid=(int)$pdo->lastInsertId();
   $inserted[]=['id'=>$fid,'filename'=>$orig,'mime'=>$mime,'size'=>$size,'url'=>Util::baseUrl('file.php?id='.$fid)];

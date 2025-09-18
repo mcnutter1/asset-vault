@@ -102,6 +102,8 @@ function initDOM(){
   initPhotoModal();
   initDocModal();
   initPersonPhotoModal();
+  initPersonViewTabs();
+  initPersonIdSlots();
   initAssetsFilter();
   initNavToggle();
 }
@@ -308,6 +310,91 @@ function initDocModal(){
     upBtn.disabled=true; setStatus('All uploads processed');
     // keep modal open to review; user can close
   });
+}
+
+// Tabs for person view/edit
+function initPersonViewTabs(){
+  const tabs = qsa('[data-tab-link]');
+  if (!tabs.length) return;
+  tabs.forEach(a=>{
+    a.addEventListener('click', (e)=>{
+      e.preventDefault();
+      const key = a.getAttribute('data-tab-link');
+      qsa('[data-tab-link]').forEach(x=> x.classList.toggle('active', x===a));
+      qsa('[data-tab-panel]').forEach(p=> p.classList.toggle('show', p.getAttribute('data-tab-panel')===key));
+    });
+  });
+}
+
+// Inline ID slots uploader for person page
+function initPersonIdSlots(){
+  const slots = qsa('[data-id-slot]');
+  if (!slots.length) return;
+  const csrfEl = document.querySelector('input[name="csrf"]');
+  const csrf = csrfEl ? csrfEl.value : '';
+  const baseEl = document.querySelector('base');
+  const baseHref = baseEl ? baseEl.href : '';
+
+  slots.forEach(slot=>{
+    const disabled = slot.hasAttribute('data-disabled');
+    const input = slot.querySelector('input[type=file]');
+    const browse = slot.querySelector('.dz .link');
+    if (disabled) {
+      if (input) input.disabled = true;
+      return;
+    }
+    function send(file){
+      if (!file) return;
+      const personId = slot.getAttribute('data-person-id');
+      const caption = slot.getAttribute('data-caption') || '';
+      const form = new FormData();
+      form.append('csrf', csrf);
+      form.append('person_id', personId);
+      form.append('caption', caption);
+      form.append('photo', file, file.name);
+      fetch(baseHref + 'upload_person_photo.php', { method:'POST', body: form, headers:{'X-Requested-With':'XMLHttpRequest'} })
+        .then(r=>r.json())
+        .then(j=>{
+          if (!j.ok) throw new Error(j.error||'Upload failed');
+          const files = j.files||[];
+          if (files.length){
+            const url = files[0].url;
+            let img = slot.querySelector('img.id-prev');
+            if (!img){ img = document.createElement('img'); img.className='id-prev'; slot.appendChild(img); }
+            img.src = url; img.alt = file.name;
+            toast('Uploaded');
+          }
+        })
+        .catch(err=> toast(err.message||'Error uploading'));
+    }
+    if (browse){ browse.addEventListener('click', (e)=>{ e.preventDefault(); input && input.click(); }); }
+    if (input){ input.addEventListener('change', e=>{ const f = e.target.files && e.target.files[0]; if (f) send(f); }); }
+    ['dragenter','dragover','dragleave','drop'].forEach(evt=> slot.addEventListener(evt, (e)=>{ e.preventDefault(); e.stopPropagation(); }));
+    slot.addEventListener('drop', (e)=>{ const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) send(f); });
+  });
+
+  // Files tab generic uploader
+  const drop = qs('[data-files-drop]');
+  if (drop && !drop.hasAttribute('data-disabled')){
+    const input = drop.querySelector('input[type=file]');
+    const browse = drop.querySelector('.dz .link');
+    const personId = drop.getAttribute('data-person-id');
+    function push(files){
+      Array.from(files||[]).forEach(file=>{
+        const form = new FormData();
+        form.append('csrf', csrf);
+        form.append('person_id', personId);
+        form.append('photo', file, file.name);
+        fetch(baseHref + 'upload_person_photo.php', { method:'POST', body: form, headers:{'X-Requested-With':'XMLHttpRequest'} })
+          .then(r=>r.json()).then(j=>{ if(!j.ok) throw new Error(j.error||'Upload failed'); toast('Uploaded'); location.reload(); })
+          .catch(err=> toast(err.message||'Error'));
+      });
+    }
+    if (browse){ browse.addEventListener('click', (e)=>{ e.preventDefault(); input && input.click(); }); }
+    if (input){ input.addEventListener('change', e=> push(e.target.files)); }
+    ['dragenter','dragover','dragleave','drop'].forEach(evt=> drop.addEventListener(evt, (e)=>{ e.preventDefault(); e.stopPropagation(); }));
+    drop.addEventListener('drop', e=> push(e.dataTransfer.files));
+  }
 }
 
 // Auto-submit filters on the Assets list (debounced for search)
