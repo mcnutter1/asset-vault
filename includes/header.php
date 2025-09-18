@@ -110,6 +110,32 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_asset_properties();
+  // Ensure policy_types lookup table exists
+  if (!function_exists('av_ensure_policy_types')) {
+    function av_ensure_policy_types(){
+      try {
+        $pdo = Database::get();
+        $pdo->exec("CREATE TABLE IF NOT EXISTS policy_types (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          code VARCHAR(50) NOT NULL UNIQUE,
+          name VARCHAR(100) NOT NULL,
+          sort_order INT NOT NULL DEFAULT 0,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Seed defaults if empty
+        $cnt = (int)$pdo->query('SELECT COUNT(*) FROM policy_types')->fetchColumn();
+        if ($cnt === 0) {
+          $defs = [
+            ['home','Home'],['auto','Auto'],['boat','Boat'],['flood','Flood'],['umbrella','Umbrella'],['jewelry','Jewelry'],['electronics','Electronics'],['other','Other']
+          ];
+          $ins=$pdo->prepare('INSERT IGNORE INTO policy_types(code,name,sort_order,is_active) VALUES (?,?,?,1)');
+          $i=0; foreach ($defs as $d){ $ins->execute([$d[0],$d[1],$i++]); }
+        }
+      } catch (Throwable $e) { /* ignore; non-critical */ }
+    }
+  }
+  av_ensure_policy_types();
   // Ensure People-related additional schema for details and policy links
   if (!function_exists('av_ensure_policy_people_cov')) {
     function av_ensure_policy_people_cov(){

@@ -210,15 +210,24 @@ if ($isEdit) {
   <form method="post">
     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
     <input type="hidden" name="action" value="save">
-    <div class="row">
+  <div class="row">
       <div class="col-3"><label>Policy #</label><input name="policy_number" value="<?= Util::h($policy['policy_number'] ?? '') ?>" required></div>
       <div class="col-3"><label>Insurer</label><input name="insurer" value="<?= Util::h($policy['insurer'] ?? '') ?>" required></div>
       <div class="col-3">
         <label>Type</label>
-        <?php $types=['home','auto','boat','flood','umbrella','jewelry','electronics','other']; $curType = $policy['policy_type'] ?? 'home'; ?>
+        <?php
+          // Load dynamic policy types if table exists
+          $types = [];
+          try {
+            $has = $pdo->query("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'policy_types'")->fetchColumn();
+            if ($has) { $types = $pdo->query("SELECT code, name FROM policy_types WHERE is_active=1 ORDER BY sort_order, name")->fetchAll(PDO::FETCH_ASSOC); }
+          } catch (Throwable $e) { $types = []; }
+          if (!$types) { $types = array_map(function($c){ return ['code'=>$c,'name'=>ucfirst($c)]; }, ['home','auto','boat','flood','umbrella','jewelry','electronics','other']); }
+          $curType = $policy['policy_type'] ?? 'home';
+        ?>
         <select name="policy_type">
-          <?php foreach ($types as $t): ?>
-            <option value="<?= $t ?>" <?= $curType===$t?'selected':'' ?>><?= ucfirst($t) ?></option>
+          <?php foreach ($types as $t): $code = is_array($t)? $t['code'] : $t; $name = is_array($t)? $t['name'] : ucfirst($t); ?>
+            <option value="<?= Util::h($code) ?>" <?= $curType===$code?'selected':'' ?>><?= Util::h($name) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
