@@ -166,13 +166,15 @@ function initPhotoModal(){
       const size = document.createElement('div'); size.className='upl-size'; size.textContent = prettySize(item.file.size);
       meta.appendChild(name); meta.appendChild(size);
       left.appendChild(icon); left.appendChild(meta);
+      const crop = document.createElement('button'); crop.type='button'; crop.className='upl-x'; crop.textContent='✂'; crop.title='Crop & resize';
+      crop.onclick = async ()=>{ const nf = await openCropper(item.file, { aspect:'free' }); if (nf){ item.file = nf; renderQueue(); } };
       const close = document.createElement('button'); close.type='button'; close.className='upl-x'; close.textContent='✕';
       close.onclick=()=>{ queue = queue.filter(q=>q.id!==item.id); renderQueue(); };
       const bar = document.createElement('div'); bar.className='upl-bar';
       const fill = document.createElement('div'); fill.className='upl-fill'; fill.style.width = (item.prog||0)+'%';
       bar.appendChild(fill);
       const err = document.createElement('div'); err.className='upl-err'; if (item.error){ err.textContent=item.error; }
-      row.appendChild(left); row.appendChild(close); row.appendChild(bar); row.appendChild(err);
+      row.appendChild(left); row.appendChild(crop); row.appendChild(close); row.appendChild(bar); row.appendChild(err);
       list.appendChild(row);
     });
     upBtn.disabled = queue.length===0;
@@ -500,6 +502,107 @@ function prettySize(bytes){
   return (Math.round(n*10)/10)+' '+units[i];
 }
 
+// Open a simple cropper and return a Promise<File|null>
+async function openCropper(file, opts){
+  opts = Object.assign({ aspect: 'free', max: 1600, mime: 'image/jpeg', quality: 0.9 }, opts||{});
+  const modal = document.getElementById('cropModal');
+  if (!modal) return null;
+  const stage = document.getElementById('cropStage');
+  const aspectSel = document.getElementById('cropAspect');
+  const zoom = document.getElementById('cropZoom');
+  const maxSel = document.getElementById('cropMax');
+  const applyBtn = document.getElementById('cropApply');
+  // Reset UI
+  aspectSel.value = typeof opts.aspect==='string' ? opts.aspect : String(opts.aspect);
+  zoom.value = 1;
+  maxSel.value = String(opts.max);
+  stage.innerHTML = '';
+  const img = document.createElement('img');
+  stage.appendChild(img);
+  let url = URL.createObjectURL(file);
+  img.src = url;
+  let ow=0, oh=0; let cw=0, ch=0; let cover=1; let scale=1; let imgW=0, imgH=0; let imgX=0, imgY=0; let dragging=false; let startX=0, startY=0; let startImgX=0, startImgY=0;
+
+  function setAspect(){
+    cw = stage.clientWidth;
+    let ar = aspectSel.value;
+    if (ar==='free') { ch = stage.clientHeight; }
+    else { try { const r=eval(ar); ch = Math.round(cw / r); } catch(e){ ch = stage.clientHeight; } }
+    stage.style.height = ch + 'px';
+    fit();
+  }
+  function fit(){
+    if (!ow || !oh) return;
+    cw = stage.clientWidth; ch = stage.clientHeight;
+    cover = Math.max(cw/ow, ch/oh);
+    const oldW = imgW, oldH = imgH;
+    const centerX = cw/2, centerY = ch/2;
+    const relX = oldW? (centerX - imgX) / oldW : 0.5;
+    const relY = oldH? (centerY - imgY) / oldH : 0.5;
+    imgW = ow * cover * scale;
+    imgH = oh * cover * scale;
+    imgX = centerX - relX * imgW;
+    imgY = centerY - relY * imgH;
+    applyTransform();
+  }
+  function applyTransform(){
+    img.style.width = imgW + 'px';
+    img.style.height = imgH + 'px';
+    img.style.left = imgX + 'px';
+    img.style.top = imgY + 'px';
+  }
+  function clamp(){
+    // Keep image covering the frame to avoid gaps
+    if (imgW <= cw) imgX = (cw - imgW)/2; else { if (imgX > 0) imgX = 0; if (imgX + imgW < cw) imgX = cw - imgW; }
+    if (imgH <= ch) imgY = (ch - imgH)/2; else { if (imgY > 0) imgY = 0; if (imgY + imgH < ch) imgY = ch - imgH; }
+  }
+
+  img.ondblclick = ()=>{ scale = 1; fit(); };
+  img.onpointerdown = (e)=>{ dragging=true; startX=e.clientX; startY=e.clientY; startImgX=imgX; startImgY=imgY; img.setPointerCapture(e.pointerId); };
+  img.onpointermove = (e)=>{ if(!dragging) return; const dx=e.clientX-startX, dy=e.clientY-startY; imgX=startImgX+dx; imgY=startImgY+dy; clamp(); applyTransform(); };
+  img.onpointerup = img.onpointercancel = ()=>{ dragging=false; };
+  zoom.oninput = ()=>{ scale = parseFloat(zoom.value||'1'); fit(); };
+
+  await new Promise((resolve)=>{ img.onload = resolve; });
+  ow = img.naturalWidth; oh = img.naturalHeight;
+  setAspect();
+
+  return new Promise((resolve)=>{
+    function close(){ modal.classList.remove('show'); URL.revokeObjectURL(url); applyBtn.onclick=null; }
+    applyBtn.onclick = ()=>{
+      // Compute visible frame rect in source coords
+      clamp();
+      const sx = Math.max(0, (0 - imgX) * (ow / imgW));
+      const sy = Math.max(0, (0 - imgY) * (oh / imgH));
+      const sw = Math.min(cw, imgX + imgW) - Math.max(0, imgX);
+      const sh = Math.min(ch, imgY + imgH) - Math.max(0, imgY);
+      const sW = sw * (ow / imgW);
+      const sH = sh * (oh / imgH);
+      const maxSide = parseInt(maxSel.value || '1600', 10);
+      const scaleOut = Math.min(1, maxSide / Math.max(sW, sH));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(sW * scaleOut));
+      canvas.height = Math.max(1, Math.round(sH * scaleOut));
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, sx, sy, sW, sH, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob)=>{
+        if (!blob) { close(); return resolve(null); }
+        const ext = opts.mime.includes('png') ? 'png' : 'jpg';
+        const name = (file.name||'image').replace(/\.(\w+)$/, '') + '-cropped.' + ext;
+        const f = new File([blob], name, { type: opts.mime });
+        close(); resolve(f);
+      }, opts.mime, opts.quality);
+    };
+    // Show modal last so layout is correct
+    modal.classList.add('show');
+    // Close on backdrop click via existing handlers
+    document.querySelectorAll('[data-modal-close="cropModal"]').forEach(btn=>{
+      btn.onclick = ()=>{ modal.classList.remove('show'); resolve(null); };
+    });
+  });
+}
+
 // Person photos uploader (modal)
 function initPersonPhotoModal(){
   const modal = qs('#personPhotoModal');
@@ -515,6 +618,7 @@ function initPersonPhotoModal(){
   let queue = [];
   function add(files){ Array.from(files||[]).forEach(f=>{ if (!/^image\//i.test(f.type)) return; queue.push({file:f,id:Math.random().toString(36).slice(2),prog:0,error:''}); }); render(); }
   function render(){ if(!list) return; list.innerHTML=''; queue.forEach(it=>{ const row=document.createElement('div'); row.className='upl-row'; const left=document.createElement('div'); left.className='upl-left'; const icon=document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️'; const meta=document.createElement('div'); meta.className='upl-meta'; const name=document.createElement('div'); name.className='upl-name'; name.textContent=it.file.name; const size=document.createElement('div'); size.className='upl-size'; size.textContent=prettySize(it.file.size); meta.appendChild(name); meta.appendChild(size); left.appendChild(icon); left.appendChild(meta); const x=document.createElement('button'); x.type='button'; x.className='upl-x'; x.textContent='✕'; x.onclick=()=>{ queue=queue.filter(q=>q.id!==it.id); render(); }; const bar=document.createElement('div'); bar.className='upl-bar'; const fill=document.createElement('div'); fill.className='upl-fill'; fill.style.width=(it.prog||0)+'%'; bar.appendChild(fill); const err=document.createElement('div'); err.className='upl-err'; if (it.error) err.textContent=it.error; row.appendChild(left); row.appendChild(x); row.appendChild(bar); row.appendChild(err); list.appendChild(row); }); if (upBtn) upBtn.disabled = queue.length===0; }
+  function render(){ if(!list) return; list.innerHTML=''; queue.forEach(it=>{ const row=document.createElement('div'); row.className='upl-row'; const left=document.createElement('div'); left.className='upl-left'; const icon=document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️'; const meta=document.createElement('div'); meta.className='upl-meta'; const name=document.createElement('div'); name.className='upl-name'; name.textContent=it.file.name; const size=document.createElement('div'); size.className='upl-size'; size.textContent=prettySize(it.file.size); meta.appendChild(name); meta.appendChild(size); left.appendChild(icon); left.appendChild(meta); const crop=document.createElement('button'); crop.type='button'; crop.className='upl-x'; crop.textContent='✂'; crop.title='Crop & resize'; crop.onclick=async ()=>{ const nf=await openCropper(it.file,{aspect:'free'}); if(nf){ it.file=nf; render(); } }; const x=document.createElement('button'); x.type='button'; x.className='upl-x'; x.textContent='✕'; x.onclick=()=>{ queue=queue.filter(q=>q.id!==it.id); render(); }; const bar=document.createElement('div'); bar.className='upl-bar'; const fill=document.createElement('div'); fill.className='upl-fill'; fill.style.width=(it.prog||0)+'%'; bar.appendChild(fill); const err=document.createElement('div'); err.className='upl-err'; if (it.error) err.textContent=it.error; row.appendChild(left); row.appendChild(crop); row.appendChild(x); row.appendChild(bar); row.appendChild(err); list.appendChild(row); }); if (upBtn) upBtn.disabled = queue.length===0; }
   function setError(msg){ if(!errBox) return; if (msg){ errBox.textContent=msg; errBox.style.display='block'; } else { errBox.textContent=''; errBox.style.display='none'; } }
   function setStatus(msg){ if(!status) return; status.textContent=msg||''; status.style.display=msg?'block':'none'; }
   function prevent(e){ e.preventDefault(); e.stopPropagation(); }
