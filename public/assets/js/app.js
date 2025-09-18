@@ -387,7 +387,7 @@ function initPersonIdSlots(){
         })
         .catch(err=> toast(err.message||'Error uploading'));
     }
-    if (browse){ browse.addEventListener('click', (e)=>{ e.preventDefault(); input && input.click(); }); }
+    if (browse){ browse.addEventListener('click', (e)=>{ e.preventDefault(); try{ const cap=slot.getAttribute('data-caption')||''; const capEl=document.getElementById('pp_caption'); if (capEl) capEl.value=cap; const modal=document.getElementById('personPhotoModal'); if (modal) modal.classList.add('show'); }catch(err){} }); }
     if (input){ input.addEventListener('change', e=>{ const f = e.target.files && e.target.files[0]; if (f) send(f); }); }
     ['dragenter','dragover','dragleave','drop'].forEach(evt=> slot.addEventListener(evt, (e)=>{ e.preventDefault(); e.stopPropagation(); }));
     slot.addEventListener('drop', (e)=>{ const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) send(f); });
@@ -404,13 +404,14 @@ function initPersonIdSlots(){
         const form = new FormData();
         form.append('csrf', csrf);
         form.append('person_id', personId);
+        const capEl = document.getElementById('pp_caption'); if (capEl && capEl.value) form.append('caption', capEl.value);
         form.append('photo', file, file.name);
         fetch(baseHref + 'upload_person_photo.php', { method:'POST', body: form, headers:{'X-Requested-With':'XMLHttpRequest'} })
           .then(r=>r.json()).then(j=>{ if(!j.ok) throw new Error(j.error||'Upload failed'); toast('Uploaded'); location.reload(); })
           .catch(err=> toast(err.message||'Error'));
       });
     }
-    if (browse){ browse.addEventListener('click', (e)=>{ e.preventDefault(); input && input.click(); }); }
+    if (browse){ browse.addEventListener('click', (e)=>{ e.preventDefault(); const modal=document.getElementById('personPhotoModal'); if (modal) modal.classList.add('show'); }); }
     if (input){ input.addEventListener('change', e=> push(e.target.files)); }
     ['dragenter','dragover','dragleave','drop'].forEach(evt=> drop.addEventListener(evt, (e)=>{ e.preventDefault(); e.stopPropagation(); }));
     drop.addEventListener('drop', e=> push(e.dataTransfer.files));
@@ -509,6 +510,8 @@ function initPersonPhotoModal(){
   const errBox = qs('#pp_error', modal);
   const upBtn = qs('#pp_upload', modal);
   const status = qs('#pp_status', modal);
+  const captionEl = document.getElementById('pp_caption');
+  const personIdEl = document.getElementById('pp_person_id');
   let queue = [];
   function add(files){ Array.from(files||[]).forEach(f=>{ if (!/^image\//i.test(f.type)) return; queue.push({file:f,id:Math.random().toString(36).slice(2),prog:0,error:''}); }); render(); }
   function render(){ if(!list) return; list.innerHTML=''; queue.forEach(it=>{ const row=document.createElement('div'); row.className='upl-row'; const left=document.createElement('div'); left.className='upl-left'; const icon=document.createElement('div'); icon.className='upl-icon'; icon.textContent='🖼️'; const meta=document.createElement('div'); meta.className='upl-meta'; const name=document.createElement('div'); name.className='upl-name'; name.textContent=it.file.name; const size=document.createElement('div'); size.className='upl-size'; size.textContent=prettySize(it.file.size); meta.appendChild(name); meta.appendChild(size); left.appendChild(icon); left.appendChild(meta); const x=document.createElement('button'); x.type='button'; x.className='upl-x'; x.textContent='✕'; x.onclick=()=>{ queue=queue.filter(q=>q.id!==it.id); render(); }; const bar=document.createElement('div'); bar.className='upl-bar'; const fill=document.createElement('div'); fill.className='upl-fill'; fill.style.width=(it.prog||0)+'%'; bar.appendChild(fill); const err=document.createElement('div'); err.className='upl-err'; if (it.error) err.textContent=it.error; row.appendChild(left); row.appendChild(x); row.appendChild(bar); row.appendChild(err); list.appendChild(row); }); if (upBtn) upBtn.disabled = queue.length===0; }
@@ -520,7 +523,7 @@ function initPersonPhotoModal(){
   input && input.addEventListener('change', e=> add(e.target.files));
   upBtn && upBtn.addEventListener('click', async ()=>{
     if (!queue.length) return; setError(''); let done=0;
-    for (const it of queue){ await new Promise((resolve)=>{ const xhr=new XMLHttpRequest(); var baseEl=document.querySelector('base'); var baseHref=baseEl?baseEl.href:''; xhr.open('POST', baseHref+'upload_person_photo.php'); xhr.responseType='json'; xhr.setRequestHeader('X-Requested-With','XMLHttpRequest'); xhr.onload=function(){ var json=xhr.response && typeof xhr.response==='object' ? xhr.response : null; if (xhr.status>=200 && xhr.status<300 && json && json.ok){ const gal=document.getElementById('personPhotoGallery'); const empty=document.getElementById('personPhotoEmpty'); if (empty) empty.style.display='none'; if (gal && gal.style.display==='none') gal.style.display='grid'; (json.files||[]).forEach(f=>{ if (gal){ const im=document.createElement('img'); im.src=f.url; im.alt=f.filename||''; gal.appendChild(im); } }); it.prog=100; it.error=''; render(); resolve(); } else { const err=(json && json.error)?json.error:('Upload failed (HTTP '+xhr.status+')'); it.error=err; render(); resolve(); } }; xhr.onerror=function(){ it.error='Network error'; render(); resolve(); }; xhr.upload.onprogress=function(e){ if (e.lengthComputable){ it.prog=Math.round((e.loaded/e.total)*100); render(); } }; const form=new FormData(); var csrf=document.querySelector('input[name="csrf"]'); form.append('csrf', csrf?csrf.value:''); var pid=null; try{ pid=new URLSearchParams(location.search).get('id'); }catch(e){} form.append('person_id', pid||''); form.append('photo', it.file, it.file.name); xhr.send(form); }); done++; setStatus('Uploaded '+done+' of '+queue.length); }
+    for (const it of queue){ await new Promise((resolve)=>{ const xhr=new XMLHttpRequest(); var baseEl=document.querySelector('base'); var baseHref=baseEl?baseEl.href:''; xhr.open('POST', baseHref+'upload_person_photo.php'); xhr.responseType='json'; xhr.setRequestHeader('X-Requested-With','XMLHttpRequest'); xhr.onload=function(){ var json=xhr.response && typeof xhr.response==='object' ? xhr.response : null; if (xhr.status>=200 && xhr.status<300 && json && json.ok){ const gal=document.getElementById('personPhotoGallery'); const empty=document.getElementById('personPhotoEmpty'); if (empty) empty.style.display='none'; if (gal && gal.style.display==='none') gal.style.display='grid'; (json.files||[]).forEach(f=>{ if (gal){ const im=document.createElement('img'); im.src=f.url; im.alt=f.filename||''; gal.appendChild(im); } }); it.prog=100; it.error=''; render(); resolve(); } else { const err=(json && json.error)?json.error:('Upload failed (HTTP '+xhr.status+')'); it.error=err; render(); resolve(); } }; xhr.onerror=function(){ it.error='Network error'; render(); resolve(); }; xhr.upload.onprogress=function(e){ if (e.lengthComputable){ it.prog=Math.round((e.loaded/e.total)*100); render(); } }; const form=new FormData(); var csrf=document.querySelector('input[name="csrf"]'); form.append('csrf', csrf?csrf.value:''); var pid=null; if (personIdEl && personIdEl.value) { pid = personIdEl.value; } else { try{ pid=new URLSearchParams(location.search).get('id'); }catch(e){} } form.append('person_id', pid||''); if (captionEl && captionEl.value) form.append('caption', captionEl.value); form.append('photo', it.file, it.file.name); xhr.send(form); }); done++; setStatus('Uploaded '+done+' of '+queue.length); }
     toast('Photos uploaded'); if (upBtn) upBtn.disabled=true; setStatus('All uploads processed');
   });
 }

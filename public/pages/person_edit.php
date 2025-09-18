@@ -417,5 +417,6 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
     </div>
   </div>
   <input type="hidden" id="pp_person_id" value="<?= (int)$id ?>">
+  <input type="hidden" id="pp_caption" value="">
 </div>
 <?php endif; ?>
