@@ -34,6 +34,7 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
         <a class="<?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
         <a class="<?= $tab==='addresses'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=addresses') ?>">Addresses</a>
         <a class="<?= $tab==='policy_types'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=policy_types') ?>">Policy Types</a>
+        <a class="<?= $tab==='person_docs'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=person_docs') ?>">Person Docs</a>
         <a class="<?= $tab==='trash'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=trash') ?>">Trash</a>
         <a class="<?= $tab==='properties'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=properties') ?>">Properties</a>
       </div>
@@ -143,6 +144,11 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
       <section class="settings-card">
         <h1>Policy Types</h1>
         <?php include __DIR__ . '/settings_policy_types.php'; ?>
+      </section>
+    <?php elseif ($tab==='person_docs'): ?>
+      <section class="settings-card">
+        <h1>People: Document Types</h1>
+        <?php include __DIR__ . '/settings_person_docs.php'; ?>
       </section>
     <?php else: ?>
       <section class="settings-card"><h1>Unknown Settings</h1></section>

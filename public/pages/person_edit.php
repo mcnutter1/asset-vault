@@ -35,6 +35,30 @@ if (($_POST['action'] ?? '') === 'save'){
   $boat_exp = ($_POST['priv_boat_license_expiration'] ?? '') ?: null;
   $stmt=$pdo->prepare('INSERT INTO person_private(person_id, ssn, driver_license, passport_number, medical_notes, dl_state, dl_expiration, passport_country, passport_expiration, global_entry_number, global_entry_expiration, birth_certificate_number, boat_license_number, boat_license_expiration) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE ssn=VALUES(ssn), driver_license=VALUES(driver_license), passport_number=VALUES(passport_number), medical_notes=VALUES(medical_notes), dl_state=VALUES(dl_state), dl_expiration=VALUES(dl_expiration), passport_country=VALUES(passport_country), passport_expiration=VALUES(passport_expiration), global_entry_number=VALUES(global_entry_number), global_entry_expiration=VALUES(global_entry_expiration), birth_certificate_number=VALUES(birth_certificate_number), boat_license_number=VALUES(boat_license_number), boat_license_expiration=VALUES(boat_license_expiration)');
   $stmt->execute([$id,$ssn,$dl,$pp,$med,$dl_state,$dl_exp,$pp_country,$pp_exp,$ge_no,$ge_exp,$bc_no,$boat_no,$boat_exp]);
+  // Also upsert dynamic person document values from posted fields
+  try {
+    // Load doc type and field maps
+    $types = [];
+    foreach ($pdo->query('SELECT id, code FROM person_doc_types') as $r){ $types[$r['code']] = (int)$r['id']; }
+    $fieldIdMap = [];
+    foreach ($pdo->query('SELECT id, doc_type_id, name_key FROM person_doc_fields') as $r){ $fieldIdMap[(int)$r['doc_type_id'].'|'.$r['name_key']] = (int)$r['id']; }
+    $posted = $_POST['doc_field'] ?? [];
+    if (is_array($posted)){
+      foreach ($posted as $code=>$kv){
+        $code = (string)$code; if (!isset($types[$code])) continue; $typeId = $types[$code];
+        // Ensure person_docs record exists
+        $pdo->prepare('INSERT IGNORE INTO person_docs(person_id, doc_type_id) VALUES (?,?)')->execute([$id,$typeId]);
+        if (!is_array($kv)) continue;
+        foreach ($kv as $key=>$val){
+          $fid = $fieldIdMap[$typeId.'|'.$key] ?? 0; if (!$fid) continue;
+          // Normalize values by input type? For now, store raw string
+          $stmt = $pdo->prepare('INSERT INTO person_doc_values(person_id,doc_type_id,field_id,value_text) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text)');
+          $stmt->execute([$id,$typeId,$fid, ($val===''? null : $val)]);
+        }
+      }
+    }
+  } catch (Throwable $e) { /* ignore */ }
+
   // Simple contact add if provided inline
   if (($_POST['new_contact_value'] ?? '') !== ''){
     $ct = $_POST['new_contact_type'] ?? 'phone';
@@ -70,6 +94,34 @@ if ($isEdit && (($_POST['action'] ?? '')==='unlink_asset')){
   Util::checkCsrf(); $aid=(int)($_POST['asset_id']??0); $pdo->prepare('DELETE FROM person_assets WHERE person_id=? AND asset_id=?')->execute([$id,$aid]); Util::redirect('index.php?page=person_edit&id='.$id);
 }
 
+// Add a document type to this person
+if ($isEdit && (($_POST['action'] ?? '')==='add_person_doc')){
+  Util::checkCsrf();
+  $typeId = (int)($_POST['doc_type_id'] ?? 0);
+  if ($typeId>0){ $pdo->prepare('INSERT IGNORE INTO person_docs(person_id, doc_type_id) VALUES (?,?)')->execute([$id,$typeId]); }
+  Util::redirect('index.php?page=person_edit&id='.$id.'#docs');
+}
+// Remove a document from this person
+if ($isEdit && (($_POST['action'] ?? '')==='delete_person_doc')){
+  Util::checkCsrf();
+  $typeId = (int)($_POST['doc_type_id'] ?? 0);
+  if ($typeId>0){
+    // Delete values and doc link
+    $pdo->prepare('DELETE FROM person_doc_values WHERE person_id=? AND doc_type_id=?')->execute([$id,$typeId]);
+    $pdo->prepare('DELETE FROM person_docs WHERE person_id=? AND doc_type_id=?')->execute([$id,$typeId]);
+    // Also move any captioned files to Trash
+    try {
+      $st = $pdo->prepare('SELECT code FROM person_doc_types WHERE id=?'); $st->execute([$typeId]); $code = $st->fetchColumn();
+      if ($code){
+        $cap1 = $code.'_front'; $cap2 = $code.'_back';
+        $up = $pdo->prepare("UPDATE files SET is_trashed=1, trashed_at=NOW() WHERE entity_type='person' AND entity_id=? AND caption IN (?,?)");
+        $up->execute([$id,$cap1,$cap2]);
+      }
+    } catch (Throwable $e) { /* ignore */ }
+  }
+  Util::redirect('index.php?page=person_edit&id='.$id.'#docs');
+}
+
 // Link policy to person (with optional coverage)
 if ($isEdit && (($_POST['action'] ?? '')==='link_policy')){
   Util::checkCsrf();
@@ -95,7 +147,29 @@ if ($isEdit){ $st=$pdo->prepare('SELECT * FROM people WHERE id=?'); $st->execute
 $contacts=[]; if ($isEdit){ $st=$pdo->prepare('SELECT * FROM person_contacts WHERE person_id=? ORDER BY is_primary DESC, id DESC'); $st->execute([$id]); $contacts=$st->fetchAll(); }
 $assets=$pdo->query('SELECT id,name FROM assets WHERE is_deleted=0 ORDER BY name')->fetchAll();
 $linkedAssets=[]; if ($isEdit){ $st=$pdo->prepare('SELECT pa.asset_id,a.name,pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? ORDER BY a.name'); $st->execute([$id]); $linkedAssets=$st->fetchAll(); }
-$files=[]; if ($isEdit){ $st=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? ORDER BY uploaded_at DESC"); $st->execute([$id]); $files=$st->fetchAll(); }
+$files=[]; if ($isEdit){ $st=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? AND is_trashed=0 ORDER BY uploaded_at DESC"); $st->execute([$id]); $files=$st->fetchAll(); }
+// Doc types and this person's active docs
+$docTypes = $pdo->query('SELECT * FROM person_doc_types WHERE is_active=1 ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
+$activeDocs = [];
+if ($isEdit){
+  $st = $pdo->prepare('SELECT dt.* FROM person_docs pd JOIN person_doc_types dt ON dt.id=pd.doc_type_id WHERE pd.person_id=? ORDER BY dt.sort_order, dt.name');
+  $st->execute([$id]); $activeDocs = $st->fetchAll(PDO::FETCH_ASSOC);
+}
+// Field defs cache and values for this person
+$fieldDefs = [];
+foreach ($docTypes as $dt){
+  $sid = (int)$dt['id'];
+  $st = $pdo->prepare('SELECT * FROM person_doc_fields WHERE doc_type_id=? ORDER BY sort_order, display_name');
+  $st->execute([$sid]); $fieldDefs[$sid] = $st->fetchAll(PDO::FETCH_ASSOC);
+}
+$values = [];
+if ($isEdit && $activeDocs){
+  $ids = implode(',', array_map('intval', array_column($activeDocs,'id')));
+  // Pull values per active doc types
+  $st = $pdo->prepare('SELECT v.doc_type_id, v.field_id, v.value_text FROM person_doc_values v WHERE v.person_id=?');
+  $st->execute([$id]);
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r){ $values[(int)$r['doc_type_id']][(int)$r['field_id']] = $r['value_text']; }
+}
 // Policies
 $policies = $pdo->query('SELECT id, insurer, policy_number, policy_type FROM policies ORDER BY insurer, policy_number')->fetchAll();
 $policyCov = [];
@@ -180,23 +254,45 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
           <div class="col-6"><label>Notes</label><input name="notes" value="<?= Util::h($person['notes'] ?? '') ?>" form="personHeaderForm" placeholder="Notes (optional)"></div>
         </div>
       </div>
-      <div class="id-section">
+      <div class="id-section" id="docs">
         <?php $pidAttr = $isEdit? 'data-person-id="'.$id.'"' : 'data-disabled="1"'; ?>
-        <?php
-          $defs = [
-            ['key'=>'dl','label'=>"Driver's License"],
-            ['key'=>'passport','label'=>'Passport'],
-            ['key'=>'ssn','label'=>'Social Security'],
-            ['key'=>'birth','label'=>'Birth Certificate'],
-            ['key'=>'global','label'=>'Global Entry'],
-            ['key'=>'boat','label'=>'Boat License'],
-          ];
-        ?>
-        <?php foreach ($defs as $def): $k=$def['key']; $front=findByCaption($files, $k.'_front'); $back=findByCaption($files, $k.'_back'); ?>
+        <div class="section-head" style="align-items:center; gap:8px">
+          <h2>Identification & Documents</h2>
+          <?php if ($isEdit): ?>
+            <form method="post" class="actions" style="margin-left:auto; gap:6px">
+              <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+              <input type="hidden" name="action" value="add_person_doc">
+              <select name="doc_type_id">
+                <?php
+                  // Offer types not yet active
+                  $activeIds = array_map(fn($d)=> (int)$d['id'], $activeDocs);
+                  foreach ($docTypes as $t): if (in_array((int)$t['id'],$activeIds,true)) continue; ?>
+                    <option value="<?= (int)$t['id'] ?>"><?= Util::h($t['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+              <button class="btn sm" type="submit">Add</button>
+            </form>
+          <?php endif; ?>
+        </div>
+        <?php if (!$activeDocs): ?>
+          <div class="small muted" style="margin-top:6px">No documents yet. Use Add to include IDs or documents.</div>
+        <?php endif; ?>
+        <?php foreach ($activeDocs as $dt): $code=$dt['code']; $front=findByCaption($files, $code.'_front'); $back=findByCaption($files, $code.'_back'); $tid=(int)$dt['id']; $defs = $fieldDefs[$tid] ?? []; ?>
           <div class="id-row">
-            <div class="id-title"><?= Util::h($def['label']) ?></div>
+            <div class="id-title" style="display:flex; align-items:center; gap:8px">
+              <span><?= Util::h($dt['name']) ?></span>
+              <?php if ($isEdit): ?>
+                <form method="post" onsubmit="return confirmAction('Remove this document?')" style="margin-left:8px">
+                  <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
+                  <input type="hidden" name="action" value="delete_person_doc">
+                  <input type="hidden" name="doc_type_id" value="<?= $tid ?>">
+                  <button class="btn sm ghost danger" title="Remove">🗑️</button>
+                </form>
+              <?php endif; ?>
+            </div>
             <div class="id-slots">
-              <div class="id-slot" data-id-slot data-caption="<?= Util::h($k.'_front') ?>" <?= $pidAttr ?>>
+              <?php if ($dt['allow_front_photo']): ?>
+              <div class="id-slot" data-id-slot data-caption="<?= Util::h($code.'_front') ?>" <?= $pidAttr ?>>
                 <?php if ($front && strpos($front['mime_type'],'image/')===0): ?>
                   <div class="thumb" data-file-wrap>
                     <button class="thumb-trash" type="button" title="Move to Trash" data-file-trash data-file-id="<?= (int)$front['id'] ?>">🗑️</button>
@@ -206,7 +302,9 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
                 <div class="dz"><div class="dz-icon">⬆️</div><div class="dz-title">Drop front side here</div><div class="dz-sub">or <span class="link">Browse files</span></div></div>
                 <input type="file" accept="image/*" hidden>
               </div>
-              <div class="id-slot" data-id-slot data-caption="<?= Util::h($k.'_back') ?>" <?= $pidAttr ?>>
+              <?php endif; ?>
+              <?php if ($dt['allow_back_photo']): ?>
+              <div class="id-slot" data-id-slot data-caption="<?= Util::h($code.'_back') ?>" <?= $pidAttr ?>>
                 <?php if ($back && strpos($back['mime_type'],'image/')===0): ?>
                   <div class="thumb" data-file-wrap>
                     <button class="thumb-trash" type="button" title="Move to Trash" data-file-trash data-file-id="<?= (int)$back['id'] ?>">🗑️</button>
@@ -216,29 +314,25 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
                 <div class="dz"><div class="dz-icon">⬆️</div><div class="dz-title">Drop back side here</div><div class="dz-sub">or <span class="link">Browse files</span></div></div>
                 <input type="file" accept="image/*" hidden>
               </div>
-            </div>
-            <?php if (in_array($k,['dl','passport','ssn','birth','global','boat'])): ?>
-            <div class="id-fields row" style="margin-top:6px">
-              <?php if ($k==='dl'): ?>
-                <div class="col-4"><label>License Number</label><input name="priv_dl" value="<?= Util::h($priv['driver_license'] ?? '') ?>" form="personHeaderForm"></div>
-                <div class="col-4"><label>State Issued</label><input name="priv_dl_state" value="<?= Util::h($priv['dl_state'] ?? '') ?>" form="personHeaderForm" placeholder="e.g., New Jersey"></div>
-                <div class="col-4"><label>Expiration Date</label><input type="date" name="priv_dl_expiration" value="<?= Util::h($priv['dl_expiration'] ?? '') ?>" form="personHeaderForm"></div>
-              <?php elseif ($k==='passport'): ?>
-                <div class="col-4"><label>Passport Number</label><input name="priv_passport" value="<?= Util::h($priv['passport_number'] ?? '') ?>" form="personHeaderForm"></div>
-                <div class="col-4"><label>Country Issued</label><input name="priv_passport_country" value="<?= Util::h($priv['passport_country'] ?? '') ?>" form="personHeaderForm"></div>
-                <div class="col-4"><label>Expiration Date</label><input type="date" name="priv_passport_expiration" value="<?= Util::h($priv['passport_expiration'] ?? '') ?>" form="personHeaderForm"></div>
-              <?php elseif ($k==='ssn'): ?>
-                <div class="col-4"><label>SSN</label><input name="priv_ssn" value="<?= Util::h($priv['ssn'] ?? '') ?>" form="personHeaderForm" placeholder="###-##-####"></div>
-              <?php elseif ($k==='birth'): ?>
-                <div class="col-6"><label>Certificate #</label><input name="priv_birth_certificate_number" value="<?= Util::h($priv['birth_certificate_number'] ?? '') ?>" form="personHeaderForm"></div>
-              <?php elseif ($k==='global'): ?>
-                <div class="col-6"><label>Global Entry #</label><input name="priv_global_entry_number" value="<?= Util::h($priv['global_entry_number'] ?? '') ?>" form="personHeaderForm"></div>
-                <div class="col-6"><label>Expiration Date</label><input type="date" name="priv_global_entry_expiration" value="<?= Util::h($priv['global_entry_expiration'] ?? '') ?>" form="personHeaderForm"></div>
-              <?php elseif ($k==='boat'): ?>
-                <div class="col-6"><label>Boat License #</label><input name="priv_boat_license_number" value="<?= Util::h($priv['boat_license_number'] ?? '') ?>" form="personHeaderForm"></div>
-                <div class="col-6"><label>Expiration Date</label><input type="date" name="priv_boat_license_expiration" value="<?= Util::h($priv['boat_license_expiration'] ?? '') ?>" form="personHeaderForm"></div>
               <?php endif; ?>
             </div>
+            <?php if ($defs): ?>
+              <div class="id-fields row" style="margin-top:6px">
+                <?php foreach ($defs as $f): $fid=(int)$f['id']; $val=$values[$tid][$fid] ?? ''; $nameKey=$f['name_key']; $type=$f['input_type']; ?>
+                  <div class="col-4">
+                    <label><?= Util::h($f['display_name']) ?></label>
+                    <?php if ($type==='date'): ?>
+                      <input type="date" name="doc_field[<?= Util::h($code) ?>][<?= Util::h($nameKey) ?>]" value="<?= Util::h($val) ?>" form="personHeaderForm">
+                    <?php elseif ($type==='number'): ?>
+                      <input type="number" name="doc_field[<?= Util::h($code) ?>][<?= Util::h($nameKey) ?>]" value="<?= Util::h($val) ?>" form="personHeaderForm">
+                    <?php elseif ($type==='checkbox'): ?>
+                      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" name="doc_field[<?= Util::h($code) ?>][<?= Util::h($nameKey) ?>]" value="1" <?= ($val==='1'?'checked':'') ?> form="personHeaderForm"> Yes</label>
+                    <?php else: ?>
+                      <input name="doc_field[<?= Util::h($code) ?>][<?= Util::h($nameKey) ?>]" value="<?= Util::h($val) ?>" form="personHeaderForm">
+                    <?php endif; ?>
+                  </div>
+                <?php endforeach; ?>
+              </div>
             <?php endif; ?>
           </div>
         <?php endforeach; ?>

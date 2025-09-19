@@ -177,6 +177,86 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_policy_people_cov();
+  // Ensure dynamic person documents schema (types + fields + values)
+  if (!function_exists('av_ensure_person_docs')) {
+    function av_ensure_person_docs(){
+      try {
+        $pdo = Database::get();
+        // Master: document types for people
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_doc_types (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          code VARCHAR(50) NOT NULL UNIQUE,
+          name VARCHAR(150) NOT NULL,
+          allow_front_photo TINYINT(1) NOT NULL DEFAULT 1,
+          allow_back_photo TINYINT(1) NOT NULL DEFAULT 1,
+          sort_order INT NOT NULL DEFAULT 0,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Field definitions for a document type
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_doc_fields (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          doc_type_id INT NOT NULL,
+          name_key VARCHAR(100) NOT NULL,
+          display_name VARCHAR(150) NOT NULL,
+          input_type ENUM('text','date','number','checkbox') NOT NULL DEFAULT 'text',
+          sort_order INT NOT NULL DEFAULT 0,
+          is_required TINYINT(1) NOT NULL DEFAULT 0,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_doc_name (doc_type_id, name_key),
+          CONSTRAINT fk_pdf_doc FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Active docs added to a person (one per type by default)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_docs (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          person_id INT NOT NULL,
+          doc_type_id INT NOT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_person_doctype (person_id, doc_type_id),
+          CONSTRAINT fk_pdocs_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+          CONSTRAINT fk_pdocs_doctype FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Values entered for a person's document
+        $pdo->exec("CREATE TABLE IF NOT EXISTS person_doc_values (
+          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+          person_id INT NOT NULL,
+          doc_type_id INT NOT NULL,
+          field_id INT NOT NULL,
+          value_text TEXT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_person_doc_field (person_id, doc_type_id, field_id),
+          CONSTRAINT fk_pdval_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+          CONSTRAINT fk_pdval_type FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE,
+          CONSTRAINT fk_pdval_field FOREIGN KEY (field_id) REFERENCES person_doc_fields(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Seed built-in default doc types and fields (idempotent)
+        $defs = [
+          'dl'       => ["Driver's License", 1, 1, [ ['number','License Number','text',0,1], ['dl_state','State Issued','text',1,0], ['dl_expiration','Expiration Date','date',2,0] ]],
+          'passport' => ['Passport', 1, 1, [ ['passport_number','Passport Number','text',0,1], ['passport_country','Country Issued','text',1,0], ['passport_expiration','Expiration Date','date',2,0] ]],
+          'ssn'      => ['Social Security', 1, 0, [ ['ssn','SSN','text',0,0] ]],
+          'birth'    => ['Birth Certificate', 1, 1, [ ['birth_certificate_number','Certificate #','text',0,0] ]],
+          'global'   => ['Global Entry', 1, 0, [ ['global_entry_number','Global Entry #','text',0,0], ['global_entry_expiration','Expiration Date','date',1,0] ]],
+          'boat'     => ['Boat License', 1, 1, [ ['boat_license_number','Boat License #','text',0,0], ['boat_license_expiration','Expiration Date','date',1,0] ]],
+        ];
+        foreach ($defs as $code=>$def){
+          [$name,$front,$back,$fields] = $def;
+          $stmt = $pdo->prepare('INSERT IGNORE INTO person_doc_types(code,name,allow_front_photo,allow_back_photo,sort_order,is_active) VALUES (?,?,?,?,?,1)');
+          $stmt->execute([$code,$name,$front,$back,0]);
+          // Fetch id
+          $id = $pdo->prepare('SELECT id FROM person_doc_types WHERE code=?'); $id->execute([$code]); $typeId = (int)($id->fetchColumn() ?: 0);
+          if ($typeId){
+            foreach ($fields as $f){
+              [$key,$dname,$itype,$sort,$req] = $f;
+              $ins = $pdo->prepare('INSERT IGNORE INTO person_doc_fields(doc_type_id,name_key,display_name,input_type,sort_order,is_required) VALUES (?,?,?,?,?,?)');
+              $ins->execute([$typeId,$key,$dname,$itype,$sort,$req]);
+            }
+          }
+        }
+      } catch (Throwable $e) { /* ignore */ }
+    }
+  }
+  av_ensure_person_docs();
   if (!function_exists('av_ensure_person_private_fields')) {
     function av_ensure_person_private_fields(){
       try {
@@ -268,6 +348,54 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_people();
+  // Migrate legacy person_private values into person_doc_values (idempotent)
+  if (!function_exists('av_migrate_person_docs')) {
+    function av_migrate_person_docs(){
+      try {
+        $pdo = Database::get();
+        // Map doc code => fields mapping: legacy person_private column => doc field key
+        $map = [
+          'dl' => [ 'driver_license' => 'number', 'dl_state' => 'dl_state', 'dl_expiration' => 'dl_expiration' ],
+          'passport' => [ 'passport_number' => 'passport_number', 'passport_country' => 'passport_country', 'passport_expiration' => 'passport_expiration' ],
+          'ssn' => [ 'ssn' => 'ssn' ],
+          'birth' => [ 'birth_certificate_number' => 'birth_certificate_number' ],
+          'global' => [ 'global_entry_number' => 'global_entry_number', 'global_entry_expiration' => 'global_entry_expiration' ],
+          'boat' => [ 'boat_license_number' => 'boat_license_number', 'boat_license_expiration' => 'boat_license_expiration' ],
+        ];
+        // Preload type/field IDs
+        $types = [];
+        foreach ($pdo->query('SELECT id, code FROM person_doc_types') as $r){ $types[$r['code']] = (int)$r['id']; }
+        $fieldIds = [];
+        foreach ($pdo->query('SELECT id, doc_type_id, name_key FROM person_doc_fields') as $r){ $fieldIds[(int)$r['doc_type_id'].'|'.$r['name_key']] = (int)$r['id']; }
+        // Iterate person_private rows and migrate non-null values
+        foreach ($pdo->query('SELECT * FROM person_private') as $row){
+          $pid = (int)$row['person_id']; if ($pid<=0) continue;
+          foreach ($map as $code=>$fields){
+            $typeId = $types[$code] ?? 0; if (!$typeId) continue;
+            $hasAny = false; foreach ($fields as $legacyCol=>$newKey){ if (isset($row[$legacyCol]) && $row[$legacyCol]!==null && $row[$legacyCol] !== '') { $hasAny = true; break; } }
+            if (!$hasAny) continue;
+            // Ensure person_docs row exists
+            $pdo->prepare('INSERT IGNORE INTO person_docs(person_id, doc_type_id) VALUES (?,?)')->execute([$pid,$typeId]);
+            // Upsert each value
+            foreach ($fields as $legacyCol=>$newKey){
+              $val = $row[$legacyCol] ?? null; if ($val===null || $val==='') continue;
+              $fid = $fieldIds[$typeId.'|'.$newKey] ?? 0; if (!$fid) continue;
+              $stmt = $pdo->prepare('INSERT INTO person_doc_values(person_id,doc_type_id,field_id,value_text) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text)');
+              $stmt->execute([$pid,$typeId,$fid,$val]);
+            }
+          }
+        }
+        // Also create person_docs from existing captioned files if missing
+        foreach ($types as $code=>$typeId){
+          $cap1 = $code.'_front'; $cap2 = $code.'_back';
+          $sql = "SELECT DISTINCT entity_id AS person_id FROM files WHERE entity_type='person' AND (caption=? OR caption=?)";
+          $st = $pdo->prepare($sql); $st->execute([$cap1,$cap2]);
+          foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r){ $pid=(int)$r['person_id']; if($pid>0){ $pdo->prepare('INSERT IGNORE INTO person_docs(person_id, doc_type_id) VALUES (?,?)')->execute([$pid,$typeId]); } }
+        }
+      } catch (Throwable $e) { /* ignore */ }
+    }
+  }
+  av_migrate_person_docs();
   ?>
   <div class="app-bar">
     <div class="inner">
