@@ -133,6 +133,32 @@ $page = $_GET['page'] ?? 'dashboard';
     }
   }
   av_ensure_policy_types();
+  // Migrate policies.policy_type from ENUM to VARCHAR to support custom types
+  if (!function_exists('av_migrate_policy_type_varchar')) {
+    function av_migrate_policy_type_varchar(){
+      try {
+        $pdo = Database::get();
+        $row = $pdo->query("SHOW COLUMNS FROM policies LIKE 'policy_type'")->fetch(PDO::FETCH_ASSOC);
+        if ($row && isset($row['Type']) && stripos($row['Type'], 'enum(') !== false) {
+          $pdo->exec("ALTER TABLE policies MODIFY COLUMN policy_type VARCHAR(50) NOT NULL");
+        }
+      } catch (Throwable $e) { /* ignore if perms restricted */ }
+    }
+  }
+  av_migrate_policy_type_varchar();
+  // Migrate coverage_definitions.applicable_types from SET to VARCHAR for custom types
+  if (!function_exists('av_migrate_coverage_types_col')) {
+    function av_migrate_coverage_types_col(){
+      try {
+        $pdo = Database::get();
+        $row = $pdo->query("SHOW COLUMNS FROM coverage_definitions LIKE 'applicable_types'")->fetch(PDO::FETCH_ASSOC);
+        if ($row && isset($row['Type']) && stripos($row['Type'], 'set(') !== false) {
+          $pdo->exec("ALTER TABLE coverage_definitions MODIFY COLUMN applicable_types VARCHAR(500) NOT NULL");
+        }
+      } catch (Throwable $e) { /* ignore */ }
+    }
+  }
+  av_migrate_coverage_types_col();
   // Ensure People-related additional schema for details and policy links
   if (!function_exists('av_ensure_policy_people_cov')) {
     function av_ensure_policy_people_cov(){
