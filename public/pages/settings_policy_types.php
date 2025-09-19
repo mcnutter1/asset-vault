@@ -15,6 +15,15 @@ try {
   echo '<div class="small muted">Could not ensure policy_types table exists: '.Util::h($e->getMessage()).'</div>';
 }
 
+// Ensure built-in defaults exist (idempotent)
+try {
+  $builtins = [
+    ['home','Home'],['auto','Auto'],['boat','Boat'],['flood','Flood'],['umbrella','Umbrella'],['jewelry','Jewelry'],['electronics','Electronics'],['other','Other']
+  ];
+  $ins = $pdo->prepare('INSERT IGNORE INTO policy_types(code,name,sort_order,is_active) VALUES (?,?,?,1)');
+  $i=0; foreach ($builtins as $d){ $ins->execute([$d[0],$d[1],$i++]); }
+} catch (Throwable $e) { /* ignore */ }
+
 function slugify($s){ $s=strtolower(trim($s)); $s=preg_replace('/[^a-z0-9]+/','_', $s); $s=trim($s,'_'); return $s ?: 'type'; }
 
 // Handle actions

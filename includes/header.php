@@ -123,15 +123,12 @@ $page = $_GET['page'] ?? 'dashboard';
           is_active TINYINT(1) NOT NULL DEFAULT 1,
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-        // Seed defaults if empty
-        $cnt = (int)$pdo->query('SELECT COUNT(*) FROM policy_types')->fetchColumn();
-        if ($cnt === 0) {
-          $defs = [
-            ['home','Home'],['auto','Auto'],['boat','Boat'],['flood','Flood'],['umbrella','Umbrella'],['jewelry','Jewelry'],['electronics','Electronics'],['other','Other']
-          ];
-          $ins=$pdo->prepare('INSERT IGNORE INTO policy_types(code,name,sort_order,is_active) VALUES (?,?,?,1)');
-          $i=0; foreach ($defs as $d){ $ins->execute([$d[0],$d[1],$i++]); }
-        }
+        // Ensure built-in defaults are present (idempotent upsert)
+        $defs = [
+          ['home','Home'],['auto','Auto'],['boat','Boat'],['flood','Flood'],['umbrella','Umbrella'],['jewelry','Jewelry'],['electronics','Electronics'],['other','Other']
+        ];
+        $ins=$pdo->prepare('INSERT IGNORE INTO policy_types(code,name,sort_order,is_active) VALUES (?,?,?,1)');
+        $i=0; foreach ($defs as $d){ try { $ins->execute([$d[0],$d[1],$i++]); } catch (Throwable $e) { /* ignore */ } }
       } catch (Throwable $e) { /* ignore; non-critical */ }
     }
   }

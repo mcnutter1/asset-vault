@@ -25,6 +25,21 @@ if (($_POST['action'] ?? '') === 'remove') {
   Util::redirect('index.php?page=settings&tab=coverages');
 }
 
+// Load dynamic policy types (codes => names)
+$typeOpts = [];
+try {
+  $has = $pdo->query("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'policy_types'")->fetchColumn();
+  if ($has) {
+    $rowsT = $pdo->query("SELECT code, name FROM policy_types WHERE is_active=1 ORDER BY sort_order, name")->fetchAll();
+    foreach ($rowsT as $t) { $typeOpts[$t['code']] = $t['name']; }
+  }
+} catch (Throwable $e) { /* ignore */ }
+// Fallback to built-ins if table missing/empty
+if (!$typeOpts) {
+  $builtins = ['home'=>'Home','auto'=>'Auto','boat'=>'Boat','flood'=>'Flood','umbrella'=>'Umbrella','jewelry'=>'Jewelry','electronics'=>'Electronics','other'=>'Other'];
+  $typeOpts = $builtins;
+}
+
 $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAll();
 ?>
 <div>
@@ -36,7 +51,12 @@ $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAl
           <tr>
             <td><?= Util::h($r['code']) ?></td>
             <td><?= Util::h($r['name']) ?></td>
-            <td><span class="small muted"><?= Util::h($r['applicable_types']) ?></span></td>
+            <td>
+              <?php $codes = array_filter(array_map('trim', explode(',', (string)$r['applicable_types'])));
+                $labels = array_map(function($c) use ($typeOpts){ return $typeOpts[$c] ?? $c; }, $codes);
+              ?>
+              <span class="small muted"><?= Util::h(implode(', ', $labels)) ?></span>
+            </td>
             <td>
               <form method="post" onsubmit="return confirmAction('Remove coverage definition? (only if unused)')">
                 <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
@@ -61,10 +81,9 @@ $rows = $pdo->query('SELECT * FROM coverage_definitions ORDER BY name')->fetchAl
       <div class="col-12"><label>Description</label><input name="description"></div>
       <div class="col-12">
         <label>Applicable Types</label>
-        <?php $types=['home','auto','boat','flood','umbrella','jewelry','electronics','other']; ?>
         <div class="list">
-          <?php foreach ($types as $t): ?>
-            <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="types[]" value="<?= $t ?>"> <?= ucfirst($t) ?></label>
+          <?php foreach ($typeOpts as $code=>$label): ?>
+            <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="types[]" value="<?= Util::h($code) ?>"> <?= Util::h($label) ?></label>
           <?php endforeach; ?>
         </div>
       </div>
