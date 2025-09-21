@@ -1,6 +1,56 @@
 <?php
 $pdo = Database::get();
 
+// Safety: ensure person docs tables exist (idempotent). If DB lacks CREATE, degrade gracefully.
+$ensureError = null;
+try {
+  $pdo->exec("CREATE TABLE IF NOT EXISTS person_doc_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(150) NOT NULL,
+    allow_front_photo TINYINT(1) NOT NULL DEFAULT 1,
+    allow_back_photo TINYINT(1) NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  $pdo->exec("CREATE TABLE IF NOT EXISTS person_doc_fields (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    doc_type_id INT NOT NULL,
+    name_key VARCHAR(100) NOT NULL,
+    display_name VARCHAR(150) NOT NULL,
+    input_type ENUM('text','date','number','checkbox') NOT NULL DEFAULT 'text',
+    sort_order INT NOT NULL DEFAULT 0,
+    is_required TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_doc_name (doc_type_id, name_key),
+    CONSTRAINT fk_pdf_doc FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  $pdo->exec("CREATE TABLE IF NOT EXISTS person_docs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    doc_type_id INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_person_doctype (person_id, doc_type_id),
+    CONSTRAINT fk_pdocs_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pdocs_doctype FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  $pdo->exec("CREATE TABLE IF NOT EXISTS person_doc_values (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    doc_type_id INT NOT NULL,
+    field_id INT NOT NULL,
+    value_text TEXT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_person_doc_field (person_id, doc_type_id, field_id),
+    CONSTRAINT fk_pdval_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pdval_type FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pdval_field FOREIGN KEY (field_id) REFERENCES person_doc_fields(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch (Throwable $e) {
+  $ensureError = $e->getMessage();
+}
+
 function slugify_code($s){ $s=strtolower(trim((string)$s)); $s=preg_replace('/[^a-z0-9]+/','_', $s); $s=trim($s,'_'); return $s ?: 'doc'; }
 
 // Handle actions for types
@@ -78,18 +128,24 @@ if ($action === 'delete_doc_field') {
 }
 
 // Load types and optionally fields for a type
-$types = $pdo->query('SELECT * FROM person_doc_types ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
+try { $types = $pdo->query('SELECT * FROM person_doc_types ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC); }
+catch (Throwable $e) { $types = []; $ensureError = $ensureError ?: $e->getMessage(); }
 $dtype = isset($_GET['dtype']) && $_GET['dtype']!=='' ? (int)$_GET['dtype'] : 0;
 $fields = [];
 if ($dtype>0){
-  $stmt = $pdo->prepare('SELECT * FROM person_doc_fields WHERE doc_type_id=? ORDER BY sort_order, display_name');
-  $stmt->execute([$dtype]);
-  $fields = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  try {
+    $stmt = $pdo->prepare('SELECT * FROM person_doc_fields WHERE doc_type_id=? ORDER BY sort_order, display_name');
+    $stmt->execute([$dtype]);
+    $fields = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  } catch (Throwable $e) { $fields = []; $ensureError = $ensureError ?: $e->getMessage(); }
 }
 ?>
 
 <div class="settings-section">
   <h2>Add Person Document Type</h2>
+  <?php if ($ensureError): ?>
+    <div class="small muted">Note: Could not ensure person document tables (DB said: <?= Util::h($ensureError) ?>). If your DB user lacks CREATE, please run migrations manually or grant permissions. The UI will degrade gracefully.</div>
+  <?php endif; ?>
   <p class="settings-description">Define ID/Document types for people. Choose whether to allow front/back photos and which fields to collect.</p>
   <form method="post" class="row">
     <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
@@ -231,4 +287,3 @@ if ($dtype>0){
     <div class="small muted">Select a document type to manage its fields.</div>
   <?php endif; ?>
 </div>
-

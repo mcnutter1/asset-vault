@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS asset_values (
 -- Generic association via entity_type + entity_id
 CREATE TABLE IF NOT EXISTS files (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  entity_type ENUM('asset','policy') NOT NULL,
+  entity_type ENUM('asset','policy','person') NOT NULL,
   entity_id INT NOT NULL,
   filename VARCHAR(255) NOT NULL,
   mime_type VARCHAR(100) NOT NULL,
@@ -244,3 +244,51 @@ INSERT IGNORE INTO coverage_definitions (code, name, description, applicable_typ
 ('flood_contents', 'Contents (Flood)', 'Contents coverage for flood', 'flood'),
 ('scheduled_property', 'Scheduled Property', 'Scheduled personal property (e.g., jewelry)', 'jewelry,electronics,home'),
 ('umbrella_liability', 'Umbrella Liability', 'Excess liability coverage', 'umbrella');
+
+-- People: dynamic document configuration (types/fields) and per-person values
+CREATE TABLE IF NOT EXISTS person_doc_types (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  name VARCHAR(150) NOT NULL,
+  allow_front_photo TINYINT(1) NOT NULL DEFAULT 1,
+  allow_back_photo TINYINT(1) NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS person_doc_fields (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  doc_type_id INT NOT NULL,
+  name_key VARCHAR(100) NOT NULL,
+  display_name VARCHAR(150) NOT NULL,
+  input_type ENUM('text','date','number','checkbox') NOT NULL DEFAULT 'text',
+  sort_order INT NOT NULL DEFAULT 0,
+  is_required TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_doc_name (doc_type_id, name_key),
+  CONSTRAINT fk_pdf_doc FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS person_docs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  person_id INT NOT NULL,
+  doc_type_id INT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_person_doctype (person_id, doc_type_id),
+  CONSTRAINT fk_pdocs_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pdocs_doctype FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS person_doc_values (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  person_id INT NOT NULL,
+  doc_type_id INT NOT NULL,
+  field_id INT NOT NULL,
+  value_text TEXT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_person_doc_field (person_id, doc_type_id, field_id),
+  CONSTRAINT fk_pdval_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pdval_type FOREIGN KEY (doc_type_id) REFERENCES person_doc_types(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pdval_field FOREIGN KEY (field_id) REFERENCES person_doc_fields(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

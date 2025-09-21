@@ -7,7 +7,13 @@ if (!$p){ echo '<div class="card"><h1>Not Found</h1></div>'; return; }
 $name = trim(($p['first_name']??'').' '.($p['last_name']??''));
 $contacts=$pdo->prepare('SELECT * FROM person_contacts WHERE person_id=? ORDER BY is_primary DESC, id DESC'); $contacts->execute([$id]); $contacts=$contacts->fetchAll();
 $assets=$pdo->prepare('SELECT a.id,a.name,pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? ORDER BY a.name'); $assets->execute([$id]); $assets=$assets->fetchAll();
-$files=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? AND is_trashed=0 ORDER BY uploaded_at DESC"); $files->execute([$id]); $files=$files->fetchAll();
+try {
+  $files=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? AND is_trashed=0 ORDER BY uploaded_at DESC");
+  $files->execute([$id]); $files=$files->fetchAll();
+} catch (Throwable $e) {
+  $files=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? ORDER BY uploaded_at DESC");
+  $files->execute([$id]); $files=$files->fetchAll();
+}
 $auth=ensure_authenticated(); $roles=$auth['roles']??[]; $isAdmin=in_array('admin',$roles,true); $priv=[]; $s=$pdo->prepare('SELECT * FROM person_private WHERE person_id=?'); $s->execute([$id]); $priv=$s->fetch()?:[];
 
 function findByCaption($files,$cap){ foreach($files as $f){ if (strtolower(trim($f['caption'] ?? ''))===strtolower($cap)) return $f; } return null; }
@@ -51,15 +57,15 @@ $pidx = abs(crc32($name ?: (string)$id)) % count($pal); $bg=$pal[$pidx][0]; $fg=
         </div>
       </div>
       <?php
-        // Dynamic doc types and values
-        $docTypes = $pdo->query('SELECT * FROM person_doc_types WHERE is_active=1 ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
-        $activeDocs = $pdo->prepare('SELECT dt.* FROM person_docs pd JOIN person_doc_types dt ON dt.id=pd.doc_type_id WHERE pd.person_id=? ORDER BY dt.sort_order, dt.name');
-        $activeDocs->execute([$id]);
-        $activeDocs = $activeDocs->fetchAll(PDO::FETCH_ASSOC);
+        // Dynamic doc types and values (guard for missing tables)
+        try { $docTypes = $pdo->query('SELECT * FROM person_doc_types WHERE is_active=1 ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC); }
+        catch (Throwable $e) { $docTypes = []; }
+        try { $st = $pdo->prepare('SELECT dt.* FROM person_docs pd JOIN person_doc_types dt ON dt.id=pd.doc_type_id WHERE pd.person_id=? ORDER BY dt.sort_order, dt.name'); $st->execute([$id]); $activeDocs = $st->fetchAll(PDO::FETCH_ASSOC); }
+        catch (Throwable $e) { $activeDocs = []; }
         $fieldDefs = [];
-        foreach ($docTypes as $dt){ $sid=(int)$dt['id']; $st=$pdo->prepare('SELECT * FROM person_doc_fields WHERE doc_type_id=? ORDER BY sort_order, display_name'); $st->execute([$sid]); $fieldDefs[$sid]=$st->fetchAll(PDO::FETCH_ASSOC); }
+        foreach ($docTypes as $dt){ $sid=(int)$dt['id']; try { $st=$pdo->prepare('SELECT * FROM person_doc_fields WHERE doc_type_id=? ORDER BY sort_order, display_name'); $st->execute([$sid]); $fieldDefs[$sid]=$st->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { $fieldDefs[$sid]=[]; } }
         $values = [];
-        if ($activeDocs){ $st=$pdo->prepare('SELECT doc_type_id, field_id, value_text FROM person_doc_values WHERE person_id=?'); $st->execute([$id]); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r){ $values[(int)$r['doc_type_id']][(int)$r['field_id']]=$r['value_text']; } }
+        if (!empty($activeDocs)) { try { $st=$pdo->prepare('SELECT doc_type_id, field_id, value_text FROM person_doc_values WHERE person_id=?'); $st->execute([$id]); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r){ $values[(int)$r['doc_type_id']][(int)$r['field_id']]=$r['value_text']; } } catch (Throwable $e) { $values = []; } }
         function mask_mid($s){ $s=preg_replace('/\D+/','',$s); if(strlen($s)<=4) return $s; return str_repeat('•', max(0, strlen($s)-4)).substr($s,-4); }
       ?>
       <?php if (!$activeDocs): ?>
@@ -141,6 +147,70 @@ $pidx = abs(crc32($name ?: (string)$id)) % count($pal); $bg=$pal[$pidx][0]; $fg=
             <li class="item"><a href="<?= Util::baseUrl('index.php?page=asset_edit&id='.(int)$a['id']) ?>"><?= Util::h($a['name']) ?></a><span><?= Util::h($a['role']) ?></span></li>
           <?php endforeach; ?>
         </ul>
+      </div>
+    <?php endif; ?>
+
+    <?php
+      // Linked Policies grouped by type: Policy - Coverage - Amount
+      $linked = [];
+      try {
+        $st = $pdo->prepare('SELECT pp.id AS link_id, p.id AS policy_id, p.policy_number, p.insurer, p.policy_type, pp.coverage_definition_id
+                              FROM policy_people pp JOIN policies p ON p.id=pp.policy_id
+                              WHERE pp.person_id=? ORDER BY p.policy_type, p.insurer, p.policy_number');
+        $st->execute([$id]);
+        $linked = $st->fetchAll(PDO::FETCH_ASSOC);
+      } catch (Throwable $e) { $linked = []; }
+      if ($linked):
+        // Map type code -> display name
+        $typeNames = [];
+        try {
+          $hasTypes = $pdo->query("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'policy_types'")->fetchColumn();
+          if ($hasTypes) {
+            foreach ($pdo->query('SELECT code,name FROM policy_types') as $r){ $typeNames[$r['code']] = $r['name']; }
+          }
+        } catch (Throwable $e) { /* ignore */ }
+        // Collect policy IDs and fetch their coverages
+        $pids = array_map(function($r){ return (int)$r['policy_id']; }, $linked);
+        $pids = array_values(array_unique(array_filter($pids)));
+        $covMap = [];
+        if ($pids){
+          $rows = $pdo->query('SELECT pc.policy_id, pc.coverage_definition_id, cd.name AS coverage_name, pc.limit_amount
+                                FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id
+                                WHERE pc.policy_id IN ('.implode(',', $pids).')')->fetchAll(PDO::FETCH_ASSOC);
+          foreach ($rows as $r){ $covMap[(int)$r['policy_id']][] = ['cov_id'=>(int)$r['coverage_definition_id'],'name'=>$r['coverage_name'],'amount'=>$r['limit_amount']]; }
+        }
+        // Group into display buckets by policy type
+        $byType = [];
+        foreach ($linked as $lnk){
+          $ptype = (string)($lnk['policy_type'] ?? 'other');
+          $typeLabel = $typeNames[$ptype] ?? ucwords(str_replace('_',' ',$ptype));
+          $byType[$typeLabel] = $byType[$typeLabel] ?? [];
+          $label = trim(($lnk['insurer'] ?: '').' '.($lnk['policy_number'] ?: ''));
+          $pid = (int)$lnk['policy_id'];
+          $oneCov = $lnk['coverage_definition_id'] ? (int)$lnk['coverage_definition_id'] : null;
+          $covs = $covMap[$pid] ?? [];
+          if ($oneCov !== null) {
+            foreach ($covs as $c){ if ($c['cov_id'] === $oneCov){ $byType[$typeLabel][] = ['policy_id'=>$pid, 'policy_label'=>$label, 'cov'=>$c['name'], 'amt'=>$c['amount']]; break; } }
+          } else {
+            // Whole policy link: include all coverages (or a placeholder if none)
+            if ($covs){ foreach ($covs as $c){ $byType[$typeLabel][] = ['policy_id'=>$pid, 'policy_label'=>$label, 'cov'=>$c['name'], 'amt'=>$c['amount']]; } }
+            else { $byType[$typeLabel][] = ['policy_id'=>$pid, 'policy_label'=>$label, 'cov'=>'—', 'amt'=>null]; }
+          }
+        }
+    ?>
+      <div class="card">
+        <div class="section-head"><h2>Policies</h2></div>
+        <?php foreach ($byType as $tname=>$items): ?>
+          <div class="small muted" style="margin:6px 0 4px 0"><?= Util::h($tname) ?></div>
+          <ul class="list" style="margin-top:4px">
+            <?php foreach ($items as $it): $amt = ($it['amt']!==null && $it['amt']!=='') ? ('$'.number_format((float)$it['amt'], 2)) : '—'; ?>
+              <li class="item">
+                <a href="<?= Util::baseUrl('index.php?page=policy_edit&id='.(int)$it['policy_id']) ?>"><?= Util::h($it['policy_label']) ?></a>
+                <span><?= Util::h($it['cov']) ?> — <?= Util::h($amt) ?></span>
+              </li>
+            <?php endforeach; ?>
+          </ul>
+        <?php endforeach; ?>
       </div>
     <?php endif; ?>
   </div>

@@ -147,28 +147,42 @@ if ($isEdit){ $st=$pdo->prepare('SELECT * FROM people WHERE id=?'); $st->execute
 $contacts=[]; if ($isEdit){ $st=$pdo->prepare('SELECT * FROM person_contacts WHERE person_id=? ORDER BY is_primary DESC, id DESC'); $st->execute([$id]); $contacts=$st->fetchAll(); }
 $assets=$pdo->query('SELECT id,name FROM assets WHERE is_deleted=0 ORDER BY name')->fetchAll();
 $linkedAssets=[]; if ($isEdit){ $st=$pdo->prepare('SELECT pa.asset_id,a.name,pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? ORDER BY a.name'); $st->execute([$id]); $linkedAssets=$st->fetchAll(); }
-$files=[]; if ($isEdit){ $st=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? AND is_trashed=0 ORDER BY uploaded_at DESC"); $st->execute([$id]); $files=$st->fetchAll(); }
-// Doc types and this person's active docs
-$docTypes = $pdo->query('SELECT * FROM person_doc_types WHERE is_active=1 ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
+$files=[]; if ($isEdit){
+  try {
+    $st=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? AND is_trashed=0 ORDER BY uploaded_at DESC");
+    $st->execute([$id]); $files=$st->fetchAll();
+  } catch (Throwable $e) {
+    // Fallback if is_trashed column is missing
+    $st=$pdo->prepare("SELECT id, filename, mime_type, size, uploaded_at, caption FROM files WHERE entity_type='person' AND entity_id=? ORDER BY uploaded_at DESC");
+    $st->execute([$id]); $files=$st->fetchAll();
+  }
+}
+// Doc types and this person's active docs (guard for missing tables)
+$docTypes = [];
+try { $docTypes = $pdo->query('SELECT * FROM person_doc_types WHERE is_active=1 ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { $docTypes = []; }
 $activeDocs = [];
 if ($isEdit){
-  $st = $pdo->prepare('SELECT dt.* FROM person_docs pd JOIN person_doc_types dt ON dt.id=pd.doc_type_id WHERE pd.person_id=? ORDER BY dt.sort_order, dt.name');
-  $st->execute([$id]); $activeDocs = $st->fetchAll(PDO::FETCH_ASSOC);
+  try {
+    $st = $pdo->prepare('SELECT dt.* FROM person_docs pd JOIN person_doc_types dt ON dt.id=pd.doc_type_id WHERE pd.person_id=? ORDER BY dt.sort_order, dt.name');
+    $st->execute([$id]); $activeDocs = $st->fetchAll(PDO::FETCH_ASSOC);
+  } catch (Throwable $e) { $activeDocs = []; }
 }
 // Field defs cache and values for this person
 $fieldDefs = [];
 foreach ($docTypes as $dt){
-  $sid = (int)$dt['id'];
-  $st = $pdo->prepare('SELECT * FROM person_doc_fields WHERE doc_type_id=? ORDER BY sort_order, display_name');
-  $st->execute([$sid]); $fieldDefs[$sid] = $st->fetchAll(PDO::FETCH_ASSOC);
+  try {
+    $sid = (int)$dt['id'];
+    $st = $pdo->prepare('SELECT * FROM person_doc_fields WHERE doc_type_id=? ORDER BY sort_order, display_name');
+    $st->execute([$sid]); $fieldDefs[$sid] = $st->fetchAll(PDO::FETCH_ASSOC);
+  } catch (Throwable $e) { $fieldDefs[(int)$dt['id']] = []; }
 }
 $values = [];
 if ($isEdit && $activeDocs){
-  $ids = implode(',', array_map('intval', array_column($activeDocs,'id')));
-  // Pull values per active doc types
-  $st = $pdo->prepare('SELECT v.doc_type_id, v.field_id, v.value_text FROM person_doc_values v WHERE v.person_id=?');
-  $st->execute([$id]);
-  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r){ $values[(int)$r['doc_type_id']][(int)$r['field_id']] = $r['value_text']; }
+  try {
+    $st = $pdo->prepare('SELECT v.doc_type_id, v.field_id, v.value_text FROM person_doc_values v WHERE v.person_id=?');
+    $st->execute([$id]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r){ $values[(int)$r['doc_type_id']][(int)$r['field_id']] = $r['value_text']; }
+  } catch (Throwable $e) { $values = []; }
 }
 // Policies
 $policies = $pdo->query('SELECT id, insurer, policy_number, policy_type FROM policies ORDER BY insurer, policy_number')->fetchAll();
@@ -265,7 +279,8 @@ function daysUntilBirthday($dob){ if(!$dob) return null; $ts=strtotime($dob); if
               <select name="doc_type_id">
                 <?php
                   // Offer types not yet active
-                  $activeIds = array_map(fn($d)=> (int)$d['id'], $activeDocs);
+                  $activeIds = [];
+                  foreach ($activeDocs as $d) { $activeIds[] = (int)$d['id']; }
                   foreach ($docTypes as $t): if (in_array((int)$t['id'],$activeIds,true)) continue; ?>
                     <option value="<?= (int)$t['id'] ?>"><?= Util::h($t['name']) ?></option>
                 <?php endforeach; ?>
