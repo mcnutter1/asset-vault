@@ -147,8 +147,7 @@ $page = $_GET['page'] ?? 'dashboard';
             $addCore($cid, 'odometer_miles', 'Odometer (miles)', 'number', 4);
             $addCore($cid, 'hours_used', 'Hours Used', 'number', 5);
             // Useful dynamic fields to map car value outputs
-            $addDyn($cid, 'market_value_usd', 'Market Value (USD)', 'number', 10, 1);
-            $addDyn($cid, 'replacement_cost_usd', 'Replacement Cost (USD)', 'number', 11, 1);
+
           }
           if ($n === 'boat') {
             $addCore($cid, 'hours_used', 'Hours Used', 'number', 4);
