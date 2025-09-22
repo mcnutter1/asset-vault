@@ -1,0 +1,40 @@
+{
+  "id": "carvalues",
+  "name": "Car Value Estimator",
+  "version": "1.0.0",
+  "description": "Estimates vehicle market value using AI from Year/Make/Model/VIN and updates mapped properties and current value.",
+  "type": "asset-action",
+  "class": "CarValuesPlugin",
+  "main": "CarValuesPlugin.php",
+  "default_enabled": true,
+  "actions": [
+    {
+      "key": "query_vehicle_value",
+      "label": "Estimate Car Value",
+      "applies_to_categories": ["Vehicle", "Car", "Truck", "Auto", "SUV", "Motorcycle"]
+    }
+  ],
+  "config_schema": {
+    "enabled": {"type": "boolean", "label": "Enabled", "default": true},
+    "debug": {"type": "boolean", "label": "Enable Debug Logging", "default": false},
+    "ai_model": {"type": "text", "label": "AI Model (optional)", "placeholder": "gpt-4.1"},
+    "mappings": {
+      "type": "group",
+      "label": "Property Mappings (Vehicle)",
+      "fields": {
+        "year": {"type": "property_select", "label": "Year property", "allow_none": true},
+        "make": {"type": "property_select", "label": "Make property", "allow_none": true},
+        "model": {"type": "property_select", "label": "Model property", "allow_none": true},
+        "vin": {"type": "property_select", "label": "VIN property", "allow_none": true},
+        "market_value_usd": {"type": "property_select", "label": "Market Value (USD) property", "allow_none": true},
+        "replacement_cost_usd": {"type": "property_select", "label": "Replacement Cost (USD) property", "allow_none": true}
+      }
+    },
+    "value_update": {
+      "type": "boolean",
+      "label": "Add Market Value as Current Value",
+      "default": false
+    }
+  }
+}
+
