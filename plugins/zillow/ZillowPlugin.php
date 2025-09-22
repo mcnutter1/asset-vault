@@ -423,28 +423,6 @@ class ZillowPlugin extends BasePlugin
         return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
     }
 
-    private function dbg(string $line): void
-    {
-        if (!$this->debug) return;
-        $this->debugLog[] = '['.date('H:i:s').'] '.$line;
-        @error_log('ZillowPlugin: '.$line);
-    }
-
-    private function renderDebug(): string
-    {
-        if (!$this->debug || !$this->debugLog) return '';
-        $out = '<div class="debug" style="margin-top:10px"><h3 style="margin:0 0 6px">Debug Log</h3><pre style="white-space:pre-wrap; font-size:11px; line-height:1.4; padding:8px; background:#f8fafc; border:1px solid var(--border); border-radius:6px;">';
-        $out .= htmlspecialchars(implode("\n", $this->debugLog), ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8');
-        $out .= '</pre></div>';
-        return $out;
-    }
-
-    private function fail(string $msg): array
-    {
-        $resp = ['ok'=>false,'error'=>$msg];
-        if ($this->debug) { $resp['debug_html'] = $this->renderDebug(); }
-        return $resp;
-    }
 
     private function renderSummary(array $facts, array $updates, $addedValue): string
     {
