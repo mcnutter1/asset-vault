@@ -93,6 +93,9 @@ class ZillowPlugin
         // Self-contained fetch + parse Zillow
         $facts = $this->scrapeZillow($house, $directUrl);
         if (!$facts) return ['ok'=>false,'error'=>'No Zillow data found'];
+        if (isset($facts['error']) && $facts['error']==='blocked') {
+            return ['ok'=>false,'error'=>'Zillow blocked automated access. Try pasting the exact property URL.'];
+        }
 
         // Build updates for mapped properties
         $updates = [];
@@ -182,9 +185,24 @@ class ZillowPlugin
                 $walker = function($node, callable $visit) use (&$walker) { if (is_array($node)) { $visit($node); foreach ($node as $v) { $walker($v, $visit); } } };
                 $walker($data, function($n) use (&$facts){
                     foreach (['zestimate','homeZestimate'] as $k) if (isset($n[$k]) && is_numeric($n[$k])) $facts['zestimate_usd'] = (float)$n[$k];
-                    foreach (['livingArea','finishedSqFt','floorSize'] as $k) if (isset($n[$k]) && is_numeric($n[$k])) $facts['sq_ft'] = (int)$n[$k];
+                    // living area variants
+                    foreach (['livingArea','livingAreaValue','finishedSqFt'] as $k) if (isset($n[$k]) && is_numeric($n[$k])) $facts['sq_ft'] = (int)$n[$k];
+                    if (isset($n['floorSize'])) {
+                        $fs = $n['floorSize'];
+                        if (is_array($fs)) {
+                            if (isset($fs['size']) && is_numeric($fs['size'])) $facts['sq_ft'] = (int)$fs['size'];
+                            elseif (isset($fs['value']) && is_numeric($fs['value'])) $facts['sq_ft'] = (int)$fs['value'];
+                        } elseif (is_numeric($fs)) {
+                            $facts['sq_ft'] = (int)$fs;
+                        }
+                    }
                     if (isset($n['bedrooms']) && is_numeric($n['bedrooms'])) $facts['beds'] = (float)$n['bedrooms'];
                     if (isset($n['bathrooms']) && is_numeric($n['bathrooms'])) $facts['baths'] = (float)$n['bathrooms'];
+                    elseif (isset($n['bathroomsFull']) || isset($n['bathroomsHalf'])) {
+                        $full = isset($n['bathroomsFull']) && is_numeric($n['bathroomsFull']) ? (float)$n['bathroomsFull'] : 0.0;
+                        $half = isset($n['bathroomsHalf']) && is_numeric($n['bathroomsHalf']) ? (float)$n['bathroomsHalf'] : 0.0;
+                        $facts['baths'] = $full + ($half * 0.5);
+                    }
                     if (isset($n['yearBuilt']) && is_numeric($n['yearBuilt'])) $facts['year_built'] = (int)$n['yearBuilt'];
                     if (isset($n['lotAreaValue']) && is_numeric($n['lotAreaValue'])) {
                         $val = (float)$n['lotAreaValue']; $unit = strtolower((string)($n['lotAreaUnits'] ?? 'acres'));
@@ -223,8 +241,11 @@ class ZillowPlugin
         }
         if (!$targetUrl) {
             $q = urlencode($this->buildSearchQuery($house));
-            $searchUrl = "https://www.zillow.com/homes/$q_rb/";
+            $searchUrl = "https://www.zillow.com/homes/{$q}_rb/";
             $html = $this->httpGet($searchUrl);
+            if ($html && (stripos($html, 'px-captcha') !== false || stripos($html, 'PerimeterX') !== false)) {
+                return ['error' => 'blocked'];
+            }
             if ($html) {
                 $candidates = [];
                 if (preg_match_all('/\"detailUrl\"\s*:\s*\"(\\\/homedetails\\\/[^"]+)\"/i', $html, $mm)) { foreach ($mm[1] as $u) { $candidates[] = stripslashes($u); } }
@@ -250,6 +271,9 @@ class ZillowPlugin
         $facts = [];
         if ($targetUrl) {
             $detail = $this->httpGet($targetUrl);
+            if ($detail && (stripos($detail, 'px-captcha') !== false || stripos($detail, 'PerimeterX') !== false)) {
+                return ['error' => 'blocked'];
+            }
             if ($detail) {
                 $facts = array_merge($facts, $this->parseZillowDetail($detail));
                 $facts['zillow_url'] = $targetUrl;

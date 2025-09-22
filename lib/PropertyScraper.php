@@ -114,7 +114,7 @@ class PropertyScraper
         }
         if (!$targetUrl) {
             $q = urlencode(self::buildSearchQuery($house));
-            $searchUrl = "https://www.zillow.com/homes/$q_rb/";
+            $searchUrl = "https://www.zillow.com/homes/{$q}_rb/";
             $html = self::fetch($searchUrl);
             if ($html) {
                 $candidates = [];
