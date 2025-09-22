@@ -961,6 +961,108 @@ ALTER TABLE policy_assets ADD UNIQUE KEY uniq_policy_asset (policy_id, asset_id,
           <button class="btn" type="button" data-modal-open="photoModal">Add Photos</button>
           <button class="btn" type="button" data-modal-open="linkPolicyModal">Link Policy / Coverage</button>
           <button class="btn" type="button" data-modal-open="locModal">Add Location</button>
+          <?php
+            // Plugin action button (Zillow for Home), opens modal with inputs/results
+            require_once __DIR__ . '/../../lib/Plugins.php';
+            $plug = PluginManager::get('zillow');
+            if ($plug && PluginManager::isEnabled('zillow')) {
+              $catIdCur = (int)($asset['category_id'] ?? 0);
+              $catNameCur = '';
+              foreach ($cats as $c) { if ((int)$c['id'] === $catIdCur) { $catNameCur = (string)$c['name']; break; } }
+              $homeNames = array_map('strtolower', (array)($plug['actions'][0]['applies_to_categories'] ?? []));
+              if ($catNameCur && in_array(strtolower($catNameCur), $homeNames)) {
+          ?>
+            <button class="btn" type="button" id="btnZillow">Query Zillow</button>
+            <!-- Generic Plugin Modal -->
+            <div class="modal-backdrop" id="pluginModal">
+              <div class="modal" style="width:min(720px,95vw)">
+                <div class="head"><strong id="pm_title">Plugin Action</strong><button class="x" data-modal-close="pluginModal">✕</button></div>
+                <div class="body">
+                  <div id="pm_loading" style="display:none;align-items:center;gap:8px"><div class="spinner"></div><div>Working…</div></div>
+                  <form id="pm_form" style="display:none">
+                    <div class="row" id="pm_inputs"></div>
+                  </form>
+                  <div id="pm_result" style="display:none"></div>
+                  <div id="pm_error" class="small" style="display:none;color:#dc2626"></div>
+                </div>
+                <div class="foot">
+                  <button class="btn ghost" data-modal-close="pluginModal" type="button">Close</button>
+                  <button class="btn" id="pm_run" type="button" style="display:none">Run</button>
+                </div>
+              </div>
+            </div>
+            <script>
+              (function(){
+                const btn = document.getElementById('btnZillow');
+                const modal = document.getElementById('pluginModal');
+                const title = document.getElementById('pm_title');
+                const loading = document.getElementById('pm_loading');
+                const form = document.getElementById('pm_form');
+                const inputsWrap = document.getElementById('pm_inputs');
+                const result = document.getElementById('pm_result');
+                const errBox = document.getElementById('pm_error');
+                const runBtn = document.getElementById('pm_run');
+                function open(){ modal.classList.add('show'); }
+                function close(){ modal.classList.remove('show'); }
+                function setState(state){
+                  loading.style.display = (state==='loading') ? 'flex' : 'none';
+                  form.style.display = (state==='form') ? 'block' : 'none';
+                  result.style.display = (state==='result') ? 'block' : 'none';
+                }
+                function setError(msg){ errBox.textContent = msg||''; errBox.style.display = msg? 'block':'none'; }
+                async function describe(){
+                  setError(''); setState('loading');
+                  const fd = new FormData();
+                  fd.append('csrf','<?= Util::csrfToken() ?>');
+                  fd.append('plugin','zillow');
+                  fd.append('action_key','query_zillow');
+                  fd.append('asset_id','<?= (int)$id ?>');
+                  fd.append('phase','describe');
+                  const res = await fetch('<?= Util::baseUrl('plugin_action.php') ?>', { method:'POST', body: fd, headers:{'X-CSRF':'<?= Util::csrfToken() ?>'} });
+                  const json = await res.json();
+                  if (!(json && json.ok)) { setError(json && json.error ? json.error : 'Failed to initialize'); return; }
+                  const ui = json.ui || {}; title.textContent = ui.title || 'Plugin Action';
+                  // No inputs: auto-run; if additionally no output later, auto-close
+                  inputsWrap.innerHTML = '';
+                  const inputs = (ui.inputs||[]);
+                  if (!inputs.length) {
+                    await run({});
+                    return;
+                  }
+                  inputs.forEach(function(inp){
+                    const wrap = document.createElement('div'); wrap.className='col-12';
+                    const label = document.createElement('label'); label.textContent = inp.label || inp.name;
+                    const el = document.createElement('input'); el.name = 'input_'+(inp.name||''); el.placeholder = inp.placeholder||''; el.value = inp.value||''; el.type = (inp.type||'text');
+                    wrap.appendChild(label); wrap.appendChild(el); inputsWrap.appendChild(wrap);
+                  });
+                  setState('form'); runBtn.style.display='inline-block';
+                  runBtn.onclick = async function(){
+                    const data = {}; Array.from(form.querySelectorAll('input[name^="input_"]')).forEach(function(i){ data[i.name.substring(6)] = i.value; });
+                    await run(data);
+                  };
+                }
+                async function run(data){
+                  setError(''); setState('loading'); runBtn.style.display='none';
+                  const fd = new FormData();
+                  fd.append('csrf','<?= Util::csrfToken() ?>');
+                  fd.append('plugin','zillow');
+                  fd.append('action_key','query_zillow');
+                  fd.append('asset_id','<?= (int)$id ?>');
+                  fd.append('phase','run');
+                  fd.append('inputs', JSON.stringify(data||{}));
+                  const res = await fetch('<?= Util::baseUrl('plugin_action.php') ?>', { method:'POST', body: fd, headers:{'X-CSRF':'<?= Util::csrfToken() ?>'} });
+                  const json = await res.json();
+                  if (!(json && json.ok)) { setError(json && json.error ? json.error : 'Plugin error'); setState('form'); return; }
+                  // If no html to display, auto-close and toast
+                  if (!json.html) { close(); toast('Completed'); setTimeout(function(){ location.reload(); }, 400); return; }
+                  result.innerHTML = json.html; setState('result');
+                }
+                btn && btn.addEventListener('click', function(){ open(); describe(); });
+              })();
+            </script>
+          <?php }
+            }
+          ?>
         </div>
       </div>
       <?php endif; ?>

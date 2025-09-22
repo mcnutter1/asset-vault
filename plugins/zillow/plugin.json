@@ -1,0 +1,38 @@
+{
+  "id": "zillow",
+  "name": "Zillow Data Scraper",
+  "version": "1.0.0",
+  "description": "Pulls home details and Zestimate from Zillow and updates asset properties.",
+  "type": "asset-action",
+  "class": "ZillowPlugin",
+  "main": "ZillowPlugin.php",
+  "default_enabled": true,
+  "actions": [
+    {
+      "key": "query_zillow",
+      "label": "Query Zillow",
+      "applies_to_categories": ["Home", "House", "Property", "Residence"]
+    }
+  ],
+  "config_schema": {
+    "enabled": {"type": "boolean", "label": "Enabled", "default": true},
+    "mappings": {
+      "type": "group",
+      "label": "Property Mappings (Home)",
+      "fields": {
+        "zillow_url": {"type": "property_select", "label": "Zillow URL property", "allow_none": true},
+        "sq_ft": {"type": "property_select", "label": "Square Feet property", "allow_none": true},
+        "beds": {"type": "property_select", "label": "Beds property", "allow_none": true},
+        "baths": {"type": "property_select", "label": "Baths property", "allow_none": true},
+        "year_built": {"type": "property_select", "label": "Year Built property", "allow_none": true},
+        "lot_size_acres": {"type": "property_select", "label": "Lot Size (acres) property", "allow_none": true}
+      }
+    },
+    "value_update": {
+      "type": "boolean",
+      "label": "Add Zestimate as Current Value",
+      "default": false
+    }
+  }
+}
+

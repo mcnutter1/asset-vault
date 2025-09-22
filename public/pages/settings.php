@@ -29,15 +29,24 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
     <div class="section-title">Settings</div>
     <nav class="nav">
       <div class="nav-group">
-        <div class="group-title">Household</div>
-        <a class="<?= $tab==='general'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=general') ?>">General</a>
-        <a class="<?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
+        <div class="group-title">General</div>
+        <a class="<?= $tab==='general'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=general') ?>">Config</a>
+        <a class="<?= $tab==='plugins'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=plugins') ?>">Plugins</a>
         <a class="<?= $tab==='addresses'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=addresses') ?>">Addresses</a>
+        <div class="group-title">Assets</div>
         <a class="<?= $tab==='asset_categories'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=asset_categories') ?>">Asset Categories</a>
+        <a class="<?= $tab==='properties'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=properties') ?>">Asset Properties</a>
+        <div class="group-title">People</div>
+                <a class="<?= $tab==='person_docs'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=person_docs') ?>">Person Docs</a>
+        <div class="group-title">Insurance</div>
         <a class="<?= $tab==='policy_types'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=policy_types') ?>">Policy Types</a>
-        <a class="<?= $tab==='person_docs'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=person_docs') ?>">Person Docs</a>
+        <a class="<?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
+        
+        <div class="group-title">Trash</div>
+        
+
         <a class="<?= $tab==='trash'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=trash') ?>">Trash</a>
-        <a class="<?= $tab==='properties'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=properties') ?>">Properties</a>
+        
       </div>
     </nav>
   </aside>
@@ -86,6 +95,11 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
       <section class="settings-card">
         <h1>Saved Addresses</h1>
         <?php include __DIR__ . '/saved_addresses.php'; ?>
+      </section>
+    <?php elseif ($tab==='plugins'): ?>
+      <section class="settings-card">
+        <h1>Plugins</h1>
+        <?php include __DIR__ . '/settings_plugins.php'; ?>
       </section>
     <?php elseif ($tab==='asset_categories'): ?>
       <section class="settings-card">

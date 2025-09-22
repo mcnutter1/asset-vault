@@ -2,6 +2,13 @@
 
 class PropertyScraper
 {
+    private static function norm(string $s): string
+    {
+        $s = strtolower($s);
+        $s = html_entity_decode($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $s = preg_replace('/[^a-z0-9]+/i', '', $s);
+        return $s;
+    }
     private static function fetch(string $url): ?string
     {
         $ch = curl_init($url);
