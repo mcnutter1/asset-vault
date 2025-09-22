@@ -31,6 +31,17 @@ Structure
 - `lib/` — database and helpers
 - `schema.sql` — database schema and seeds
 
+API
+- `public/api.php` provides a JSON API with token auth.
+  - Auth: send `Authorization: Bearer <token>` or `X-API-Key: <token>`; tokens are validated via the SSO `validate_endpoint`.
+  - GET lists: `GET /api.php?entity=assets|people|policies[&limit=100&offset=0&q=...]`
+  - GET detail: `GET /api.php?entity=assets|people|policies&id=123`
+  - POST bulk updates: `POST /api.php` with JSON body `{ "entity": "assets|people|policies", "updates": [ { "id": 1, "fields": { ... } } ] }`
+  - Updatable columns:
+    - assets: parent_id, name, category_id, description, location, make, model, serial_number, year, odometer_miles, hours_used, purchase_date, notes, location_id, asset_location_id, public_token
+    - people: first_name, last_name, dob, notes, gender
+    - policies: policy_group_id, version_number, policy_number, insurer, policy_type, start_date, end_date, premium, status, notes
+
 Uploads Storage
 - All uploaded images/documents are stored in MySQL (`files` table as LONGBLOB) — not on the filesystem.
 - Files are streamed via `public/file.php?id=<id>[&download=1]` with appropriate `Content-Type`/`Content-Disposition`.

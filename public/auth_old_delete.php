@@ -61,8 +61,7 @@ function handle_sso_callback(){
 }
 function revalidate(string $sessionToken){
   global $config;
-  $cip = client_ip_c();
-  $resp = @file_get_contents($config['validate_endpoint'].'?token='.urlencode($sessionToken).'&app_id='.urlencode($config['app_id']).($cip?('&client_ip='.urlencode($cip)):'') );
+  $resp = @file_get_contents($config['validate_endpoint'].'?token='.urlencode($sessionToken).'&app_id='.urlencode($config['app_id']));
   if(!$resp) return false;
   $data = json_decode($resp,true);
   if(!($data['ok']??false)) return false;
@@ -157,41 +156,4 @@ function handle_logout_request(){
 // Auto-handle logout when invoked with ?logout
 if(isset($_GET['logout'])){
   handle_logout_request(); // exits
-}
-
-// Validate a personal API key against the login server and return payload if valid.
-// Intended for server-to-server API requests in downstream apps.
-function validate_api_key_c(string $apiKey){
-  global $config;
-  $cip = client_ip_c();
-  $resp = @file_get_contents($config['validate_endpoint'].'?api_key='.urlencode($apiKey).'&app_id='.urlencode($config['app_id']).($cip?('&client_ip='.urlencode($cip)):'') );
-  if(!$resp) return null;
-  $data = json_decode($resp,true);
-  if(!($data['ok']??false)) return null;
-  if(!verify_hmac_c(json_encode($data['payload'], JSON_UNESCAPED_SLASHES), $config['app_secret'], $data['sig'])) return null;
-  return $data['payload'];
-}
-
-// Extract an API key from common headers or query. Prefer Authorization: Bearer, fallback to X-Api-Key, then ?api_key.
-function extract_api_key_c(): ?string {
-  $candidates = [];
-  if(isset($_SERVER['HTTP_AUTHORIZATION'])) $candidates[] = $_SERVER['HTTP_AUTHORIZATION'];
-  if(isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) $candidates[] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
-  if(function_exists('getallheaders')){
-    $hdrs = getallheaders();
-    if(isset($hdrs['Authorization'])) $candidates[] = $hdrs['Authorization'];
-    if(isset($hdrs['authorization'])) $candidates[] = $hdrs['authorization'];
-    if(isset($hdrs['X-Api-Key'])) $candidates[] = 'Bearer '.$hdrs['X-Api-Key'];
-    if(isset($hdrs['x-api-key'])) $candidates[] = 'Bearer '.$hdrs['x-api-key'];
-  }
-  foreach($candidates as $auth){ if($auth && preg_match('/^Bearer\s+(\S+)/i', $auth, $m)) return $m[1]; }
-  if(isset($_SERVER['HTTP_X_API_KEY']) && $_SERVER['HTTP_X_API_KEY']!=='') return $_SERVER['HTTP_X_API_KEY'];
-  if(isset($_GET['api_key']) && is_string($_GET['api_key']) && $_GET['api_key']!=='') return $_GET['api_key'];
-  return null;
-}
-
-function client_ip_c(): ?string {
-  $xff = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
-  if($xff){ return trim(explode(',', $xff)[0]); }
-  return $_SERVER['REMOTE_ADDR'] ?? null;
 }
