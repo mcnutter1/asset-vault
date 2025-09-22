@@ -15,6 +15,13 @@ if (($_POST['action'] ?? '') === 'save_plugin') {
     $cfg = PluginManager::getConfig($pid);
     // Enabled
     $cfg['enabled'] = isset($_POST['enabled']) ? (bool)$_POST['enabled'] : false;
+    // Generic root fields (booleans/text)
+    foreach ((array)($meta['config_schema'] ?? []) as $k=>$def) {
+      if ($k === 'mappings' || $k === 'enabled') continue;
+      $type = $def['type'] ?? '';
+      if ($type === 'boolean') { $cfg[$k] = isset($_POST[$k]) ? (bool)$_POST[$k] : false; }
+      if ($type === 'text') { $cfg[$k] = trim((string)($_POST[$k] ?? '')); }
+    }
     // Collect mapping selects (if any)
     $schema = (array)($meta['config_schema'] ?? []);
     if (isset($schema['mappings'])) {
@@ -86,6 +93,20 @@ function av_plugin_property_options(array $plugin): array {
       </div>
 
       <?php $schema = (array)($meta['config_schema'] ?? []); ?>
+      <?php // Render basic root fields except mappings/value_update/enabled ?>
+      <?php foreach ($schema as $rk=>$rdef): if (in_array($rk,['enabled','mappings','value_update'], true)) continue; $rtype=$rdef['type']??''; ?>
+        <?php if ($rtype==='text'): $val=(string)($cfg[$rk]??''); ?>
+          <div class="col-12">
+            <label><?= Util::h($rdef['label'] ?? $rk) ?></label>
+            <input name="<?= Util::h($rk) ?>" value="<?= Util::h($val) ?>" placeholder="<?= Util::h($rdef['placeholder'] ?? '') ?>">
+          </div>
+        <?php elseif ($rtype==='boolean'): $val=!empty($cfg[$rk]); ?>
+          <div class="col-12">
+            <label><input type="checkbox" name="<?= Util::h($rk) ?>" value="1" <?= $val?'checked':'' ?>> <?= Util::h($rdef['label'] ?? $rk) ?></label>
+          </div>
+        <?php endif; ?>
+      <?php endforeach; ?>
+
       <?php if (isset($schema['mappings'])): $fields=(array)$schema['mappings']['fields']; ?>
         <div class="col-12"><h3><?= Util::h($schema['mappings']['label'] ?? 'Mappings') ?></h3></div>
         <?php foreach ($fields as $k => $def): $sel = (string)(($cfg['mappings'][$k] ?? '')); ?>
@@ -112,4 +133,3 @@ function av_plugin_property_options(array $plugin): array {
     <div class="small muted" style="margin-top:6px">Settings are stored in <code>app_settings</code> under <code>plugin:<?= Util::h($active) ?></code>.</div>
   </div>
 <?php endif; ?>
-

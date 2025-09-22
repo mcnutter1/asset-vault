@@ -145,9 +145,15 @@ class ZillowPlugin
                     'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
                     'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'Accept-Language: en-US,en;q=0.9',
+                    'Referer: https://www.zillow.com/',
                 ],
                 CURLOPT_ENCODING => '',
             ]);
+            // Optional proxy
+            $proxy = (string)($this->config['proxy_url'] ?? '');
+            if ($proxy !== '') {
+                curl_setopt($ch, CURLOPT_PROXY, $proxy);
+            }
             $body = curl_exec($ch);
             $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
@@ -182,19 +188,42 @@ class ZillowPlugin
             $json = trim($m[1]);
             $data = json_decode($json, true);
             if (is_array($data)) {
+                // Prefer gdpClientCache when available (richer data)
+                $get = function(array $arr, string $path) {
+                    $cur = $arr; foreach (explode('.', $path) as $p) { if (!is_array($cur) || !array_key_exists($p, $cur)) return null; $cur = $cur[$p]; } return $cur; };
+                $componentProps = $get($data, 'props.pageProps.componentProps') ?? [];
+                if (is_array($componentProps) && isset($componentProps['gdpClientCache'])) {
+                    $raw = (string)$componentProps['gdpClientCache'];
+                    $gc = json_decode($raw, true);
+                    if (is_array($gc)) {
+                        foreach ($gc as $entry) {
+                            if (is_array($entry) && isset($entry['property']) && is_array($entry['property'])) {
+                                $p = $entry['property'];
+                                if (isset($p['zestimate']) && is_numeric($p['zestimate'])) $facts['zestimate_usd'] = (float)$p['zestimate'];
+                                if (isset($p['livingArea']) && is_numeric($p['livingArea'])) $facts['sq_ft'] = (int)$p['livingArea'];
+                                if (isset($p['bedrooms']) && is_numeric($p['bedrooms'])) $facts['beds'] = (float)$p['bedrooms'];
+                                if (isset($p['bathrooms']) && is_numeric($p['bathrooms'])) $facts['baths'] = (float)$p['bathrooms'];
+                                if (isset($p['yearBuilt']) && is_numeric($p['yearBuilt'])) $facts['year_built'] = (int)$p['yearBuilt'];
+                                if (isset($p['lotAreaValue']) && is_numeric($p['lotAreaValue'])) {
+                                    $val = (float)$p['lotAreaValue']; $unit = strtolower((string)($p['lotAreaUnit'] ?? $p['lotAreaUnits'] ?? 'acres'));
+                                    $facts['lot_size_acres'] = $unit === 'acres' ? $val : ($unit === 'sqft' ? $val/43560.0 : null);
+                                }
+                                // Continue scanning other entries but prefer the first full set
+                            }
+                        }
+                    }
+                }
+                // Fallback: generic deep walker (covers variants and when gdpClientCache absent)
                 $walker = function($node, callable $visit) use (&$walker) { if (is_array($node)) { $visit($node); foreach ($node as $v) { $walker($v, $visit); } } };
                 $walker($data, function($n) use (&$facts){
                     foreach (['zestimate','homeZestimate'] as $k) if (isset($n[$k]) && is_numeric($n[$k])) $facts['zestimate_usd'] = (float)$n[$k];
-                    // living area variants
                     foreach (['livingArea','livingAreaValue','finishedSqFt'] as $k) if (isset($n[$k]) && is_numeric($n[$k])) $facts['sq_ft'] = (int)$n[$k];
                     if (isset($n['floorSize'])) {
                         $fs = $n['floorSize'];
                         if (is_array($fs)) {
                             if (isset($fs['size']) && is_numeric($fs['size'])) $facts['sq_ft'] = (int)$fs['size'];
                             elseif (isset($fs['value']) && is_numeric($fs['value'])) $facts['sq_ft'] = (int)$fs['value'];
-                        } elseif (is_numeric($fs)) {
-                            $facts['sq_ft'] = (int)$fs;
-                        }
+                        } elseif (is_numeric($fs)) { $facts['sq_ft'] = (int)$fs; }
                     }
                     if (isset($n['bedrooms']) && is_numeric($n['bedrooms'])) $facts['beds'] = (float)$n['bedrooms'];
                     if (isset($n['bathrooms']) && is_numeric($n['bathrooms'])) $facts['baths'] = (float)$n['bathrooms'];
@@ -240,32 +269,38 @@ class ZillowPlugin
             }
         }
         if (!$targetUrl) {
-            $q = urlencode($this->buildSearchQuery($house));
-            $searchUrl = "https://www.zillow.com/homes/{$q}_rb/";
-            $html = $this->httpGet($searchUrl);
-            if ($html && (stripos($html, 'px-captcha') !== false || stripos($html, 'PerimeterX') !== false)) {
-                return ['error' => 'blocked'];
-            }
-            if ($html) {
-                $candidates = [];
-                if (preg_match_all('/\"detailUrl\"\s*:\s*\"(\\\/homedetails\\\/[^"]+)\"/i', $html, $mm)) { foreach ($mm[1] as $u) { $candidates[] = stripslashes($u); } }
-                if (preg_match_all('/https:\\/\\/www\\.zillow\\.com\\/homedetails\\/[A-Za-z0-9\\-_,.%]+/i', addslashes($html), $mm2)) { foreach ($mm2[0] as $u) { $candidates[] = stripcslashes($u); } }
-                $candidates = array_values(array_unique($candidates));
-                $wantedStreet = $this->norm($house['address'] ?? '');
-                $wantedCity = $this->norm($house['city'] ?? '');
-                $wantedZip = $this->norm($house['zip'] ?? '');
-                $best = null; $bestScore = -1;
-                foreach ($candidates as $u) {
-                    $full = (strpos($u, 'http') === 0) ? $u : ('https://www.zillow.com' . $u);
-                    $n = $this->norm($full);
-                    $score = 0;
-                    if ($wantedStreet && strpos($n, $wantedStreet) !== false) $score += 5;
-                    if ($wantedCity && strpos($n, $wantedCity) !== false) $score += 3;
-                    if ($wantedZip && strpos($n, $wantedZip) !== false) $score += 4;
-                    if ($score > $bestScore) { $best = $full; $bestScore = $score; }
+            // Try API-based search first
+            $term = $this->buildSearchQuery($house);
+            $targetUrl = $this->zillowSearchApi($term);
+            if (!$targetUrl) {
+                // Fallback: HTML search page scrape (may be blocked)
+                $q = urlencode($term);
+                $searchUrl = "https://www.zillow.com/homes/{$q}_rb/";
+                $html = $this->httpGet($searchUrl);
+                if ($html && (stripos($html, 'px-captcha') !== false || stripos($html, 'PerimeterX') !== false)) {
+                    return ['error' => 'blocked'];
                 }
-                if ($best) { $targetUrl = $best; }
-                elseif (preg_match('/https:\/\/www\.zillow\.com\/homedetails\/[A-Za-z0-9\-_,.%]+/i', $html, $m)) { $targetUrl = html_entity_decode($m[0]); }
+                if ($html) {
+                    $candidates = [];
+                    if (preg_match_all('/\"detailUrl\"\s*:\s*\"(\\\/homedetails\\\/[^"]+)\"/i', $html, $mm)) { foreach ($mm[1] as $u) { $candidates[] = stripslashes($u); } }
+                    if (preg_match_all('/https:\\/\\/www\\.zillow\\.com\\/homedetails\\/[A-Za-z0-9\\-_,.%]+/i', addslashes($html), $mm2)) { foreach ($mm2[0] as $u) { $candidates[] = stripcslashes($u); } }
+                    $candidates = array_values(array_unique($candidates));
+                    $wantedStreet = $this->norm($house['address'] ?? '');
+                    $wantedCity = $this->norm($house['city'] ?? '');
+                    $wantedZip = $this->norm($house['zip'] ?? '');
+                    $best = null; $bestScore = -1;
+                    foreach ($candidates as $u) {
+                        $full = (strpos($u, 'http') === 0) ? $u : ('https://www.zillow.com' . $u);
+                        $n = $this->norm($full);
+                        $score = 0;
+                        if ($wantedStreet && strpos($n, $wantedStreet) !== false) $score += 5;
+                        if ($wantedCity && strpos($n, $wantedCity) !== false) $score += 3;
+                        if ($wantedZip && strpos($n, $wantedZip) !== false) $score += 4;
+                        if ($score > $bestScore) { $best = $full; $bestScore = $score; }
+                    }
+                    if ($best) { $targetUrl = $best; }
+                    elseif (preg_match('/https:\/\/www\.zillow\.com\/homedetails\/[A-Za-z0-9\-_,.%]+/i', $html, $m)) { $targetUrl = html_entity_decode($m[0]); }
+                }
             }
         }
         $facts = [];
@@ -280,6 +315,76 @@ class ZillowPlugin
             }
         }
         return $facts;
+    }
+
+    private function zillowSearchApi(string $term): ?string
+    {
+        if ($term === '') return null;
+        $url = 'https://www.zillow.com/async-create-search-page-state';
+        $payload = [
+            'searchQueryState' => [
+                'isMapVisible' => true,
+                'isListVisible' => true,
+                'usersSearchTerm' => $term,
+                'mapBounds' => [
+                    // Rough USA bounds; Zillow requires mapBounds
+                    'north' => 49.38,
+                    'east' => -66.94,
+                    'south' => 24.52,
+                    'west' => -124.77,
+                ],
+                'filterState' => [ 'isAllHomes' => ['value' => true] ],
+                'mapZoom' => 5,
+                'pagination' => [ 'currentPage' => 1 ],
+            ],
+            'wants' => [ 'cat1' => ['listResults','mapResults'], 'cat2' => ['total'] ],
+            'requestId' => 10,
+            'isDebugRequest' => false,
+        ];
+        $headers = [
+            'Accept: application/json, text/plain, */*',
+            'Content-Type: application/json',
+            'Origin: https://www.zillow.com',
+            'Referer: https://www.zillow.com/homes/',
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language: en-US,en;q=0.9',
+            'Cache-Control: no-cache',
+            'Pragma: no-cache',
+        ];
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_CUSTOMREQUEST => 'PUT',
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+        ]);
+        // Optional proxy
+        $proxy = (string)($this->config['proxy_url'] ?? '');
+        if ($proxy !== '') { curl_setopt($ch, CURLOPT_PROXY, $proxy); }
+        $body = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($body === false || $code >= 400) return null;
+        $json = json_decode($body, true);
+        if (!is_array($json)) return null;
+        $sr = $json['cat1']['searchResults'] ?? ($json['searchResults'] ?? null);
+        if (!is_array($sr)) return null;
+        $cands = [];
+        foreach (['mapResults','listResults'] as $k) {
+            if (!empty($sr[$k]) && is_array($sr[$k])) {
+                foreach ($sr[$k] as $r) {
+                    $u = $r['detailUrl'] ?? null; if (!$u) continue;
+                    $cands[] = (strpos($u, 'http') === 0) ? $u : ('https://www.zillow.com'.$u);
+                }
+            }
+        }
+        $cands = array_values(array_unique($cands));
+        if (!$cands) return null;
+        // Prefer exact address term match when possible
+        $nterm = $this->norm($term); $best = null; $bestScore = -1;
+        foreach ($cands as $u) { $n = $this->norm($u); $s = 0; if (strpos($n, $nterm)!==false) $s+=5; if ($s>$bestScore){$best=$u;$bestScore=$s;} }
+        return $best ?: $cands[0];
     }
 
     private function renderSummary(array $facts, array $updates, $addedValue): string
