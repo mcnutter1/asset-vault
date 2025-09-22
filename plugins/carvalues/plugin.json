@@ -2,7 +2,7 @@
   "id": "carvalues",
   "name": "Car Value Estimator",
   "version": "1.0.0",
-  "description": "Estimates vehicle market value using AI from Year/Make/Model/VIN and updates mapped properties and current value.",
+  "description": "Estimates vehicle market and replacement values using AI from Year/Make/Model/VIN and automatically updates asset values.",
   "type": "asset-action",
   "class": "CarValuesPlugin",
   "main": "CarValuesPlugin.php",
@@ -25,16 +25,8 @@
         "year": {"type": "property_select", "label": "Year property", "allow_none": true},
         "make": {"type": "property_select", "label": "Make property", "allow_none": true},
         "model": {"type": "property_select", "label": "Model property", "allow_none": true},
-        "vin": {"type": "property_select", "label": "VIN property", "allow_none": true},
-        "market_value_usd": {"type": "property_select", "label": "Market Value (USD) property", "allow_none": true},
-        "replacement_cost_usd": {"type": "property_select", "label": "Replacement Cost (USD) property", "allow_none": true}
+        "vin": {"type": "property_select", "label": "VIN property", "allow_none": true}
       }
-    },
-    "value_update": {
-      "type": "boolean",
-      "label": "Add Market Value as Current Value",
-      "default": false
     }
   }
 }
-

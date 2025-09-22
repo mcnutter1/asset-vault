@@ -110,11 +110,12 @@ class CarValuesPlugin extends BasePlugin
         if ($odo !== null && is_numeric($odo)) { $vehicle['odometer_miles'] = (int)$odo; }
         $this->dbg('Vehicle payload prepared: year=' . $vehicle['year'] . ' make=' . $vehicle['make'] . ' model=' . $vehicle['model'] . ' vin=' . ($vin ? '[redacted]' : ''));
 
-        // Call AI estimator
+        // Call AI estimator using OpenAI key from settings
         try {
-            $model = trim((string)($this->config['ai_model'] ?? '')) ?: 'gpt-4.1';
-            $ai = new AiClient(null, $model);
-            $this->dbg('AI call model=' . $model);
+            $model = trim((string)($this->config['ai_model'] ?? '')) ?: Settings::get('openai_model', 'gpt-4.1');
+            $apiKey = Settings::get('openai_api_key', Util::config()['openai']['api_key'] ?? null);
+            $ai = new AiClient($apiKey, $model);
+            $this->dbg('AI call model=' . $model . ' (key from settings)');
             $res = ValueEstimators::valueVehicle($ai, $vehicle);
         } catch (Throwable $e) {
             $this->dbg('AI error: ' . $e->getMessage());
@@ -129,7 +130,7 @@ class CarValuesPlugin extends BasePlugin
         $sources = (array)($valuation['sources'] ?? []);
         $this->dbg('AI result: market=' . ($mv!==null?$mv:'null') . ' replacement=' . ($rc!==null?$rc:'null') . ' confidence=' . $confidence);
 
-        // Build updates for mapped properties (year/make/model/vin + values)
+        // Build updates for mapped properties (year/make/model/vin only)
         $updates = [];
         $mapPairs = [
             'year' => (string)$year,
@@ -137,8 +138,6 @@ class CarValuesPlugin extends BasePlugin
             'model' => (string)$model,
             'vin' => (string)$vin,
         ];
-        if ($mv !== null) { $mapPairs['market_value_usd'] = (string)$mv; }
-        if ($rc !== null) { $mapPairs['replacement_cost_usd'] = (string)$rc; }
 
         $this->dbg('Preparing property updates; mapped keys: ' . implode(',', array_keys($maps)));
         foreach ($mapPairs as $mapKey => $val) {
@@ -202,15 +201,18 @@ class CarValuesPlugin extends BasePlugin
             }
         }
 
-        // Optionally add current value record from market value
+        // Automatically add asset_values for market (current) and replacement
         $addedValue = null;
-        if (!empty($this->config['value_update']) && $mv !== null) {
+        if ($mv !== null) {
             $this->dbg('Adding asset_values current=' . $mv);
             $vs = $pdo->prepare("INSERT INTO asset_values(asset_id, value_type, amount, valuation_date, source, notes) VALUES (?,?,?,?,?,?)");
             $vs->execute([$assetId, 'current', $mv, date('Y-m-d'), 'carvalues', 'AI vehicle estimate']);
             $addedValue = $mv;
-        } else {
-            $this->dbg('Value update disabled or no market value');
+        }
+        if ($rc !== null) {
+            $this->dbg('Adding asset_values replace=' . $rc);
+            $vs = $pdo->prepare("INSERT INTO asset_values(asset_id, value_type, amount, valuation_date, source, notes) VALUES (?,?,?,?,?,?)");
+            $vs->execute([$assetId, 'replace', $rc, date('Y-m-d'), 'carvalues', 'AI replacement estimate']);
         }
 
         // Render summary

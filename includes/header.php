@@ -128,23 +128,39 @@ $page = $_GET['page'] ?? 'dashboard';
         $cats = [];
         foreach ($pdo->query('SELECT id, name FROM asset_categories') as $r) { $cats[(int)$r['id']] = trim((string)$r['name']); }
         if (!$cats) return;
-        $ins = $pdo->prepare('INSERT IGNORE INTO asset_property_defs(category_id, name_key, display_name, input_type, show_on_view, sort_order, is_active, is_core) VALUES (?,?,?,?,?,?,1,1)');
-        $add = function($catId, $key, $label, $type, $sort) use ($ins) {
-          if (!$catId) return; $ins->execute([$catId, $key, $label, $type, 0, $sort]);
+        $insCore = $pdo->prepare('INSERT IGNORE INTO asset_property_defs(category_id, name_key, display_name, input_type, show_on_view, sort_order, is_active, is_core) VALUES (?,?,?,?,?,?,1,1)');
+        $addCore = function($catId, $key, $label, $type, $sort, $show=0) use ($insCore) {
+          if (!$catId) return; $insCore->execute([$catId, $key, $label, $type, (int)$show, $sort]);
+        };
+        $insDyn = $pdo->prepare('INSERT IGNORE INTO asset_property_defs(category_id, name_key, display_name, input_type, show_on_view, sort_order, is_active, is_core) VALUES (?,?,?,?,?,?,1,0)');
+        $addDyn = function($catId, $key, $label, $type, $sort, $show=1) use ($insDyn) {
+          if (!$catId) return; $insDyn->execute([$catId, $key, $label, $type, (int)$show, $sort]);
         };
         foreach ($cats as $cid=>$name) {
           $n = strtolower($name);
           // Common core fields
-          $add($cid, 'make', 'Make', 'text', 0);
-          $add($cid, 'model', 'Model', 'text', 1);
-          $add($cid, 'serial_number', 'Serial Number', 'text', 2);
-          $add($cid, 'year', 'Year', 'number', 3);
+          $addCore($cid, 'make', 'Make', 'text', 0);
+          $addCore($cid, 'model', 'Model', 'text', 1);
+          $addCore($cid, 'serial_number', 'Serial Number', 'text', 2);
+          $addCore($cid, 'year', 'Year', 'number', 3);
           if (in_array($n, ['vehicle','car','truck','auto','suv','motorcycle'])) {
-            $add($cid, 'odometer_miles', 'Odometer (miles)', 'number', 4);
-            $add($cid, 'hours_used', 'Hours Used', 'number', 5);
+            $addCore($cid, 'odometer_miles', 'Odometer (miles)', 'number', 4);
+            $addCore($cid, 'hours_used', 'Hours Used', 'number', 5);
+            // Useful dynamic fields to map car value outputs
+            $addDyn($cid, 'market_value_usd', 'Market Value (USD)', 'number', 10, 1);
+            $addDyn($cid, 'replacement_cost_usd', 'Replacement Cost (USD)', 'number', 11, 1);
           }
           if ($n === 'boat') {
-            $add($cid, 'hours_used', 'Hours Used', 'number', 4);
+            $addCore($cid, 'hours_used', 'Hours Used', 'number', 4);
+          }
+          if (in_array($n, ['home','house','property','residence'])) {
+            // Dynamic fields for home/Zillow mappings
+            $addDyn($cid, 'sq_ft', 'Square Feet', 'number', 10, 1);
+            $addDyn($cid, 'beds', 'Beds', 'number', 11, 1);
+            $addDyn($cid, 'baths', 'Baths', 'number', 12, 1);
+            $addDyn($cid, 'year_built', 'Year Built', 'number', 13, 1);
+            $addDyn($cid, 'lot_size_acres', 'Lot Size (acres)', 'number', 14, 1);
+            $addDyn($cid, 'zillow_url', 'Zillow URL', 'text', 15, 1);
           }
         }
       } catch (Throwable $e) { /* ignore */ }
