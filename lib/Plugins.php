@@ -111,3 +111,43 @@ class PluginManager
         return $rows;
     }
 }
+
+// Optional base class providing shared utilities (debug logging, helpers) for plugins
+abstract class BasePlugin
+{
+    protected array $meta;
+    protected array $config;
+    protected bool $debug = false;
+    protected array $debugLog = [];
+
+    public function __construct(array $meta, array $config)
+    {
+        $this->meta = $meta;
+        $this->config = $config;
+        $this->debug = !empty($config['debug']);
+    }
+
+    protected function dbg(string $line): void
+    {
+        if (!$this->debug) return;
+        $this->debugLog[] = '['.date('H:i:s').'] '.$line;
+        $id = $this->meta['id'] ?? 'plugin';
+        @error_log('Plugin['.$id.']: '.$line);
+    }
+
+    protected function renderDebug(): string
+    {
+        if (!$this->debug || !$this->debugLog) return '';
+        $out = '<div class="debug" style="margin-top:10px"><h3 style="margin:0 0 6px">Debug Log</h3><pre style="white-space:pre-wrap; font-size:11px; line-height:1.4; padding:8px; background:#f8fafc; border:1px solid var(--border); border-radius:6px;">';
+        $out .= htmlspecialchars(implode("\n", $this->debugLog), ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8');
+        $out .= '</pre></div>';
+        return $out;
+    }
+
+    protected function fail(string $msg): array
+    {
+        $resp = ['ok'=>false,'error'=>$msg];
+        if ($this->debug) { $resp['debug_html'] = $this->renderDebug(); }
+        return $resp;
+    }
+}

@@ -1,18 +1,7 @@
 <?php
 
-class ZillowPlugin
+class ZillowPlugin extends BasePlugin
 {
-    private array $meta;
-    private array $config;
-    private bool $debug = false;
-    private array $debugLog = [];
-
-    public function __construct(array $meta, array $config)
-    {
-        $this->meta = $meta;
-        $this->config = $config;
-        $this->debug = !empty($config['debug']);
-    }
 
     public function runAction(string $action, array $ctx = []): array
     {
@@ -141,6 +130,7 @@ class ZillowPlugin
     private function httpGet(string $url): ?string
     {
         $this->dbg('HTTP GET ' . $url);
+        $ua = $this->getUserAgent();
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt_array($ch, [
@@ -148,10 +138,20 @@ class ZillowPlugin
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_TIMEOUT => 20,
                 CURLOPT_HTTPHEADER => [
-                    'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-                    'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent: ' . $ua,
+                    'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                     'Accept-Language: en-US,en;q=0.9',
                     'Referer: https://www.zillow.com/',
+                    'Sec-Fetch-Dest: document',
+                    'Sec-Fetch-Mode: navigate',
+                    'Sec-Fetch-Site: none',
+                    'Sec-Fetch-User: ?1',
+                    'Sec-Ch-Ua: "Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+                    'Sec-Ch-Ua-Mobile: ?0',
+                    'Sec-Ch-Ua-Platform: "Windows"',
+                    'Upgrade-Insecure-Requests: 1',
+                    'Cache-Control: no-cache',
+                    'Pragma: no-cache',
                 ],
                 CURLOPT_ENCODING => '',
             ]);
@@ -166,7 +166,7 @@ class ZillowPlugin
             if ($body === false) { $this->dbg('cURL error: ' . curl_error($ch)); }
             $this->dbg('HTTP code: ' . $code . '; length=' . (is_string($body) ? strlen($body) : -1));
             curl_close($ch);
-            if ($body === false || $code >= 400) return null;
+            if ($body === false) return null; // allow parsing even when code>=400
             return $body;
         }
         // Fallback without curl
@@ -365,10 +365,16 @@ class ZillowPlugin
             'Content-Type: application/json',
             'Origin: https://www.zillow.com',
             'Referer: https://www.zillow.com/homes/',
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent: ' . $this->getUserAgent(),
             'Accept-Language: en-US,en;q=0.9',
             'Cache-Control: no-cache',
             'Pragma: no-cache',
+            'Sec-Fetch-Dest: empty',
+            'Sec-Fetch-Mode: cors',
+            'Sec-Fetch-Site: same-origin',
+            'Sec-Ch-Ua: "Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+            'Sec-Ch-Ua-Mobile: ?0',
+            'Sec-Ch-Ua-Platform: "Windows"',
         ];
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -407,6 +413,14 @@ class ZillowPlugin
         $nterm = $this->norm($term); $best = null; $bestScore = -1;
         foreach ($cands as $u) { $n = $this->norm($u); $s = 0; if (strpos($n, $nterm)!==false) $s+=5; if ($s>$bestScore){$best=$u;$bestScore=$s;} }
         return $best ?: $cands[0];
+    }
+
+    private function getUserAgent(): string
+    {
+        $ua = trim((string)($this->config['user_agent'] ?? ''));
+        if ($ua !== '') { $this->dbg('Using custom UA'); return $ua; }
+        // Default desktop Chrome UA (recent)
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
     }
 
     private function dbg(string $line): void

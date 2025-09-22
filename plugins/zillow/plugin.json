@@ -18,6 +18,7 @@
     "enabled": {"type": "boolean", "label": "Enabled", "default": true},
     "proxy_url": {"type": "text", "label": "Proxy URL (optional)", "placeholder": "http://user:pass@host:port"},
     "debug": {"type": "boolean", "label": "Enable Debug Logging", "default": false},
+    "user_agent": {"type": "text", "label": "Custom User-Agent (optional)", "placeholder": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."},
     "mappings": {
       "type": "group",
       "label": "Property Mappings (Home)",
