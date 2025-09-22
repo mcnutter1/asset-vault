@@ -4,11 +4,14 @@ class ZillowPlugin
 {
     private array $meta;
     private array $config;
+    private bool $debug = false;
+    private array $debugLog = [];
 
     public function __construct(array $meta, array $config)
     {
         $this->meta = $meta;
         $this->config = $config;
+        $this->debug = !empty($config['debug']);
     }
 
     public function runAction(string $action, array $ctx = []): array
@@ -27,19 +30,20 @@ class ZillowPlugin
         if ($assetId <= 0) return ['ok'=>false,'error'=>'Missing asset_id'];
         $phase = $ctx['phase'] ?? 'run'; // 'describe' | 'run'
         $pdo = Database::get();
+        $this->dbg('Start query_zillow phase=' . $phase);
 
         // Load asset and category
         $st = $pdo->prepare('SELECT a.*, ac.name AS category_name FROM assets a LEFT JOIN asset_categories ac ON ac.id=a.category_id WHERE a.id=? LIMIT 1');
         $st->execute([$assetId]);
         $asset = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$asset) return ['ok'=>false,'error'=>'Asset not found'];
+        if (!$asset) return $this->fail('Asset not found');
 
         // Check applicability by category name
         $cat = strtolower((string)($asset['category_name'] ?? ''));
         $appliesNames = array_map('strtolower', (array)($this->meta['actions'][0]['applies_to_categories'] ?? []));
         if ($appliesNames && !in_array($cat, array_map('strtolower', $appliesNames))) {
             // allow proceeding if category empty; otherwise block
-            return ['ok'=>false,'error'=>'Plugin not applicable to this asset type'];
+            return $this->fail('Plugin not applicable to this asset type');
         }
 
         // Load primary physical address
@@ -92,9 +96,9 @@ class ZillowPlugin
 
         // Self-contained fetch + parse Zillow
         $facts = $this->scrapeZillow($house, $directUrl);
-        if (!$facts) return ['ok'=>false,'error'=>'No Zillow data found'];
+        if (!$facts) return $this->fail('No Zillow data found');
         if (isset($facts['error']) && $facts['error']==='blocked') {
-            return ['ok'=>false,'error'=>'Zillow blocked automated access. Try pasting the exact property URL.'];
+            return $this->fail('Zillow blocked automated access. Try pasting the exact property URL.');
         }
 
         // Build updates for mapped properties
@@ -128,13 +132,15 @@ class ZillowPlugin
         }
 
         $summary = $this->renderSummary($facts, $updates, $addedValue);
-
-        return [ 'ok'=>true, 'html'=>$summary, 'facts'=>$facts, 'updates'=>$updates, 'added_value'=>$addedValue ];
+        $resp = [ 'ok'=>true, 'html'=>$summary, 'facts'=>$facts, 'updates'=>$updates, 'added_value'=>$addedValue ];
+        if ($this->debug) { $resp['debug_html'] = $this->renderDebug(); }
+        return $resp;
     }
 
     // --- Helpers: in-plugin, no core scraper dependency ---
     private function httpGet(string $url): ?string
     {
+        $this->dbg('HTTP GET ' . $url);
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt_array($ch, [
@@ -153,9 +159,12 @@ class ZillowPlugin
             $proxy = (string)($this->config['proxy_url'] ?? '');
             if ($proxy !== '') {
                 curl_setopt($ch, CURLOPT_PROXY, $proxy);
+                $this->dbg('Using proxy');
             }
             $body = curl_exec($ch);
             $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if ($body === false) { $this->dbg('cURL error: ' . curl_error($ch)); }
+            $this->dbg('HTTP code: ' . $code . '; length=' . (is_string($body) ? strlen($body) : -1));
             curl_close($ch);
             if ($body === false || $code >= 400) return null;
             return $body;
@@ -163,6 +172,7 @@ class ZillowPlugin
         // Fallback without curl
         $ctx = stream_context_create(['http'=>['timeout'=>20, 'header'=>"User-Agent: Mozilla/5.0\r\n"]]);
         $res = @file_get_contents($url, false, $ctx);
+        $this->dbg('HTTP fopen length=' . ($res !== false ? strlen($res) : -1));
         return $res !== false ? $res : null;
     }
 
@@ -187,6 +197,7 @@ class ZillowPlugin
         if (preg_match('/<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/is', $html, $m)) {
             $json = trim($m[1]);
             $data = json_decode($json, true);
+            if ($data === null) { $this->dbg('JSON decode error: '.json_last_error_msg()); }
             if (is_array($data)) {
                 // Prefer gdpClientCache when available (richer data)
                 $get = function(array $arr, string $path) {
@@ -195,7 +206,9 @@ class ZillowPlugin
                 if (is_array($componentProps) && isset($componentProps['gdpClientCache'])) {
                     $raw = (string)$componentProps['gdpClientCache'];
                     $gc = json_decode($raw, true);
+                    if ($gc === null) { $this->dbg('gdpClientCache decode error: '.json_last_error_msg()); }
                     if (is_array($gc)) {
+                        $this->dbg('gdpClientCache entries: '.count($gc));
                         foreach ($gc as $entry) {
                             if (is_array($entry) && isset($entry['property']) && is_array($entry['property'])) {
                                 $p = $entry['property'];
@@ -258,11 +271,13 @@ class ZillowPlugin
     private function scrapeZillow(array $house, ?string $directUrl = null): array
     {
         $targetUrl = $directUrl;
+        $this->dbg('scrapeZillow start; directUrl=' . ($directUrl ?: '')); 
         if ($targetUrl) {
             $p = parse_url($targetUrl);
             $host = strtolower($p['host'] ?? '');
             $path = $p['path'] ?? '';
             if (!preg_match('/(^|\.)zillow\.com$/', $host) || stripos($path, '/homedetails/') === false) {
+                $this->dbg('Direct URL invalid or not homedetails');
                 $targetUrl = null;
             } else {
                 $targetUrl = 'https://www.zillow.com' . $path;
@@ -271,6 +286,7 @@ class ZillowPlugin
         if (!$targetUrl) {
             // Try API-based search first
             $term = $this->buildSearchQuery($house);
+            $this->dbg('Search term: ' . $term);
             $targetUrl = $this->zillowSearchApi($term);
             if (!$targetUrl) {
                 // Fallback: HTML search page scrape (may be blocked)
@@ -278,6 +294,7 @@ class ZillowPlugin
                 $searchUrl = "https://www.zillow.com/homes/{$q}_rb/";
                 $html = $this->httpGet($searchUrl);
                 if ($html && (stripos($html, 'px-captcha') !== false || stripos($html, 'PerimeterX') !== false)) {
+                    $this->dbg('Blocked by captcha on search');
                     return ['error' => 'blocked'];
                 }
                 if ($html) {
@@ -307,6 +324,7 @@ class ZillowPlugin
         if ($targetUrl) {
             $detail = $this->httpGet($targetUrl);
             if ($detail && (stripos($detail, 'px-captcha') !== false || stripos($detail, 'PerimeterX') !== false)) {
+                $this->dbg('Blocked by captcha on detail');
                 return ['error' => 'blocked'];
             }
             if ($detail) {
@@ -314,6 +332,7 @@ class ZillowPlugin
                 $facts['zillow_url'] = $targetUrl;
             }
         }
+        $this->dbg('Facts keys: ' . implode(',', array_keys($facts)));
         return $facts;
     }
 
@@ -365,8 +384,10 @@ class ZillowPlugin
         $body = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+        $this->dbg('Search API HTTP code: ' . $code . '; length=' . (is_string($body) ? strlen($body) : -1));
         if ($body === false || $code >= 400) return null;
         $json = json_decode($body, true);
+        if ($json === null) { $this->dbg('Search API JSON decode error: '.json_last_error_msg()); }
         if (!is_array($json)) return null;
         $sr = $json['cat1']['searchResults'] ?? ($json['searchResults'] ?? null);
         if (!is_array($sr)) return null;
@@ -380,11 +401,35 @@ class ZillowPlugin
             }
         }
         $cands = array_values(array_unique($cands));
+        $this->dbg('API candidates: ' . count($cands));
         if (!$cands) return null;
         // Prefer exact address term match when possible
         $nterm = $this->norm($term); $best = null; $bestScore = -1;
         foreach ($cands as $u) { $n = $this->norm($u); $s = 0; if (strpos($n, $nterm)!==false) $s+=5; if ($s>$bestScore){$best=$u;$bestScore=$s;} }
         return $best ?: $cands[0];
+    }
+
+    private function dbg(string $line): void
+    {
+        if (!$this->debug) return;
+        $this->debugLog[] = '['.date('H:i:s').'] '.$line;
+        @error_log('ZillowPlugin: '.$line);
+    }
+
+    private function renderDebug(): string
+    {
+        if (!$this->debug || !$this->debugLog) return '';
+        $out = '<div class="debug" style="margin-top:10px"><h3 style="margin:0 0 6px">Debug Log</h3><pre style="white-space:pre-wrap; font-size:11px; line-height:1.4; padding:8px; background:#f8fafc; border:1px solid var(--border); border-radius:6px;">';
+        $out .= htmlspecialchars(implode("\n", $this->debugLog), ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8');
+        $out .= '</pre></div>';
+        return $out;
+    }
+
+    private function fail(string $msg): array
+    {
+        $resp = ['ok'=>false,'error'=>$msg];
+        if ($this->debug) { $resp['debug_html'] = $this->renderDebug(); }
+        return $resp;
     }
 
     private function renderSummary(array $facts, array $updates, $addedValue): string

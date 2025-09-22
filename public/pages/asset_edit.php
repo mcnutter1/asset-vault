@@ -1052,10 +1052,10 @@ ALTER TABLE policy_assets ADD UNIQUE KEY uniq_policy_asset (policy_id, asset_id,
                   fd.append('inputs', JSON.stringify(data||{}));
                   const res = await fetch('<?= Util::baseUrl('plugin_action.php') ?>', { method:'POST', body: fd, headers:{'X-CSRF':'<?= Util::csrfToken() ?>'} });
                   const json = await res.json();
-                  if (!(json && json.ok)) { setError(json && json.error ? json.error : 'Plugin error'); setState('form'); return; }
+                  if (!(json && json.ok)) { setError(json && json.error ? json.error : 'Plugin error'); if (json && json.debug_html) { result.innerHTML = json.debug_html; setState('result'); } else { setState('form'); } return; }
                   // If no html to display, auto-close and toast
                   if (!json.html) { close(); toast('Completed'); setTimeout(function(){ location.reload(); }, 400); return; }
-                  result.innerHTML = json.html; setState('result');
+                  result.innerHTML = json.html; if (json.debug_html) { result.insertAdjacentHTML('beforeend', json.debug_html); } setState('result');
                 }
                 btn && btn.addEventListener('click', function(){ open(); describe(); });
               })();

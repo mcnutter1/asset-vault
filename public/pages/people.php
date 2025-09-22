@@ -20,7 +20,7 @@ $palette = [
   <div class="topline">
     <div class="title">Family IDs</div>
     <a class="btn circle" title="Add Person" href="<?= Util::baseUrl('index.php?page=person_edit') ?>">+</a>
-    <a class="rec-link" href="#" onclick="return false">⚡ 14 recommended items</a>
+    <a class="rec-link" href="#" onclick="return false">⚡ {placeholder}</a>
   </div>
   <form method="get" class="searchbar" role="search">
     <input type="hidden" name="page" value="people">
@@ -55,13 +55,5 @@ $palette = [
     </a>
   <?php endforeach; ?>
 
-  <a class="person-card add" href="<?= Util::baseUrl('index.php?page=person_edit') ?>">
-    <div class="pc-top">
-      <div class="pc-name">New Family ID</div>
-      <div class="pc-avatar ghost">+</div>
-    </div>
-    <div class="pc-foot">
-      <span class="pc-items">+ Add this item</span>
-    </div>
-  </a>
+
 </div>

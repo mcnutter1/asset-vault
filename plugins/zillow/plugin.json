@@ -17,6 +17,7 @@
   "config_schema": {
     "enabled": {"type": "boolean", "label": "Enabled", "default": true},
     "proxy_url": {"type": "text", "label": "Proxy URL (optional)", "placeholder": "http://user:pass@host:port"},
+    "debug": {"type": "boolean", "label": "Enable Debug Logging", "default": false},
     "mappings": {
       "type": "group",
       "label": "Property Mappings (Home)",
