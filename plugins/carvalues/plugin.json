@@ -25,6 +25,7 @@
         "year": {"type": "property_select", "label": "Year property", "allow_none": true},
         "make": {"type": "property_select", "label": "Make property", "allow_none": true},
         "model": {"type": "property_select", "label": "Model property", "allow_none": true},
+        "trim": {"type": "property_select", "label": "Trim Level property", "allow_none": true},
         "vin": {"type": "property_select", "label": "VIN property", "allow_none": true}
       }
     }

@@ -51,15 +51,17 @@ class CarValuesPlugin extends BasePlugin
         $year = (string)($asset['year'] ?? '');
         $make = trim((string)($asset['make'] ?? ''));
         $model = trim((string)($asset['model'] ?? ''));
+        $trim = '';
         $vin = trim((string)($asset['serial_number'] ?? ''));
         $odo = $asset['odometer_miles'] ?? null;
 
         if ($defId('year')) { $pv = trim((string)($getPropVal($defId('year')) ?? '')); if ($pv !== '') $year = $pv; }
         if ($defId('make')) { $pv = trim((string)($getPropVal($defId('make')) ?? '')); if ($pv !== '') $make = $pv; }
         if ($defId('model')) { $pv = trim((string)($getPropVal($defId('model')) ?? '')); if ($pv !== '') $model = $pv; }
+        if ($defId('trim')) { $pv = trim((string)($getPropVal($defId('trim')) ?? '')); if ($pv !== '') $trim = $pv; }
         if ($defId('vin')) { $pv = trim((string)($getPropVal($defId('vin')) ?? '')); if ($pv !== '') $vin = $pv; }
 
-        $this->dbg('Preload vehicle core fields: year=' . $year . ' make=' . $make . ' model=' . $model . ' vin=' . ($vin ? '[redacted]' : '')); 
+        $this->dbg('Preload vehicle core fields: year=' . $year . ' make=' . $make . ' model=' . $model . ' trim=' . ($trim!==''?$trim:'(none)') . ' vin=' . ($vin ? '[redacted]' : '')); 
         if ($odo !== null) { $this->dbg('Odometer: ' . (int)$odo . ' mi'); }
 
         // Phase: describe — if key inputs missing, offer fields
@@ -69,18 +71,23 @@ class CarValuesPlugin extends BasePlugin
             if ($year === '') $needFields[] = 'year';
             if ($make === '') $needFields[] = 'make';
             if ($model === '') $needFields[] = 'model';
+            if ($trim === '') $needFields[] = 'trim';
             // VIN is optional, but if missing we can still proceed; still show if empty
             if ($vin === '') $needFields[] = 'vin';
 
             foreach ($needFields as $f) {
-                $label = strtoupper(substr($f,0,1)) . substr($f,1);
-                $inputs[] = [
-                    'name' => $f,
-                    'label' => $label,
-                    'type' => ($f === 'year') ? 'number' : 'text',
-                    'placeholder' => ($f === 'vin') ? '17-char VIN (optional)' : '',
-                    'value' => ($f === 'year' ? $year : ($f === 'make' ? $make : ($f === 'model' ? $model : $vin)))
-                ];
+                $label = ($f === 'trim') ? 'Trim Level' : (strtoupper(substr($f,0,1)) . substr($f,1));
+                $type = ($f === 'year') ? 'number' : 'text';
+                $placeholder = '';
+                if ($f === 'vin') $placeholder = '17-char VIN (optional)';
+                if ($f === 'trim') $placeholder = 'e.g., EX, Limited, Sport';
+                $val = '';
+                if ($f === 'year') $val = $year;
+                elseif ($f === 'make') $val = $make;
+                elseif ($f === 'model') $val = $model;
+                elseif ($f === 'vin') $val = $vin;
+                elseif ($f === 'trim') $val = $trim;
+                $inputs[] = [ 'name'=>$f, 'label'=>$label, 'type'=>$type, 'placeholder'=>$placeholder, 'value'=>$val ];
             }
             return ['ok'=>true, 'ui'=>[ 'title'=>'Estimate Car Value', 'inputs'=>$inputs, 'submitLabel'=>'Run' ], 'autoRun'=>empty($inputs)];
         }
@@ -90,10 +97,12 @@ class CarValuesPlugin extends BasePlugin
         $uiMake = trim((string)($ctx['inputs']['make'] ?? ''));
         $uiModel = trim((string)($ctx['inputs']['model'] ?? ''));
         $uiVin = trim((string)($ctx['inputs']['vin'] ?? ''));
+        $uiTrim = trim((string)($ctx['inputs']['trim'] ?? ''));
         if ($uiYear !== '') $year = $uiYear;
         if ($uiMake !== '') $make = $uiMake;
         if ($uiModel !== '') $model = $uiModel;
         if ($uiVin !== '') $vin = $uiVin;
+        if ($uiTrim !== '') $trim = $uiTrim;
 
         // Basic validation (need at least Y/M/Model)
         if ($year === '' || $make === '' || $model === '') {
@@ -108,14 +117,15 @@ class CarValuesPlugin extends BasePlugin
             'vin' => $vin,
         ];
         if ($odo !== null && is_numeric($odo)) { $vehicle['odometer_miles'] = (int)$odo; }
-        $this->dbg('Vehicle payload prepared: year=' . $vehicle['year'] . ' make=' . $vehicle['make'] . ' model=' . $vehicle['model'] . ' vin=' . ($vin ? '[redacted]' : ''));
+        if ($trim !== '') { $vehicle['trim_level'] = $trim; }
+        $this->dbg('Vehicle payload prepared: year=' . $vehicle['year'] . ' make=' . $vehicle['make'] . ' model=' . $vehicle['model'] . ' trim=' . ($trim!==''?$trim:'(none)') . ' vin=' . ($vin ? '[redacted]' : ''));
 
         // Call AI estimator using OpenAI key from settings
         try {
-            $model = trim((string)($this->config['ai_model'] ?? '')) ?: Settings::get('openai_model', 'gpt-4.1');
+            $aiModel = trim((string)($this->config['ai_model'] ?? '')) ?: Settings::get('openai_model', 'gpt-4.1');
             $apiKey = Settings::get('openai_api_key', Util::config()['openai']['api_key'] ?? null);
-            $ai = new AiClient($apiKey, $model);
-            $this->dbg('AI call model=' . $model . ' (key from settings)');
+            $ai = new AiClient($apiKey, $aiModel);
+            $this->dbg('AI call model=' . $aiModel . ' (key from settings)');
             $res = ValueEstimators::valueVehicle($ai, $vehicle);
         } catch (Throwable $e) {
             $this->dbg('AI error: ' . $e->getMessage());
@@ -137,6 +147,7 @@ class CarValuesPlugin extends BasePlugin
             'make' => (string)$make,
             'model' => (string)$model,
             'vin' => (string)$vin,
+            'trim' => (string)$trim,
         ];
 
         $this->dbg('Preparing property updates; mapped keys: ' . implode(',', array_keys($maps)));
