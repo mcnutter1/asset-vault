@@ -33,6 +33,7 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
         <a class="<?= $tab==='general'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=general') ?>">General</a>
         <a class="<?= $tab==='coverages'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=coverages') ?>">Coverages</a>
         <a class="<?= $tab==='addresses'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=addresses') ?>">Addresses</a>
+        <a class="<?= $tab==='asset_categories'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=asset_categories') ?>">Asset Categories</a>
         <a class="<?= $tab==='policy_types'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=policy_types') ?>">Policy Types</a>
         <a class="<?= $tab==='person_docs'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=person_docs') ?>">Person Docs</a>
         <a class="<?= $tab==='trash'?'active':'' ?>" href="<?= Util::baseUrl('index.php?page=settings&tab=trash') ?>">Trash</a>
@@ -85,6 +86,11 @@ $prefillRebuild = Settings::get('rebuild_cost_per_sqft', '350');
       <section class="settings-card">
         <h1>Saved Addresses</h1>
         <?php include __DIR__ . '/saved_addresses.php'; ?>
+      </section>
+    <?php elseif ($tab==='asset_categories'): ?>
+      <section class="settings-card">
+        <h1>Asset Categories</h1>
+        <?php include __DIR__ . '/settings_categories.php'; ?>
       </section>
     <?php elseif ($tab==='trash'): ?>
       <section class="settings-card">

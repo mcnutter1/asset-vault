@@ -210,7 +210,9 @@ tbody tr:hover { background: #FAF9F8; }
 .label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; background: #fff; font-size: 12px; }
 .label .x { color: var(--muted); text-decoration: none; border: 0; background: transparent; cursor: pointer; }
 
-.header-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.header-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.header-right { flex: 0 0 auto; }
+.header-right img { max-width: 100%; height: auto; display: block; }
 .header-left { display: grid; gap: 6px; }
 .header-title { font-size: 22px; font-weight: 700; }
 .header-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -297,6 +299,13 @@ tbody tr:hover { background: #FAF9F8; }
 
 /* Settings sidebar */
 .sticky { position: sticky; top: 76px; }
+/* Make sticky sidecards scroll within viewport and disable stickiness on small screens */
+@media(min-width: 900px){
+  .card.settings.sticky { max-height: calc(100vh - 90px); overflow: auto; }
+}
+@media(max-width: 900px){
+  .sticky { position: static; top: auto; }
+}
 
 /* Uploader (photo modal) */
 .uploader { display: grid; gap: 12px; }
