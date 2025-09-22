@@ -23,6 +23,11 @@ if (($_POST['action'] ?? '') === 'add_prop') {
 if (($_POST['action'] ?? '') === 'update_prop') {
   Util::checkCsrf();
   $id = (int)($_POST['id'] ?? 0);
+  // Skip updates for core/protected properties
+  $ck = $pdo->prepare('SELECT is_core FROM asset_property_defs WHERE id=?');
+  $ck->execute([$id]);
+  $isCore = (int)($ck->fetchColumn() ?: 0);
+  if ($isCore) { Util::redirect('index.php?page=settings&tab=properties&cat='.(string)$catId); }
   $name = trim($_POST['display_name'] ?? '');
   $type = $_POST['input_type'] ?? 'text';
   $show = !empty($_POST['show_on_view']) ? 1 : 0;
@@ -35,7 +40,11 @@ if (($_POST['action'] ?? '') === 'update_prop') {
 if (($_POST['action'] ?? '') === 'delete_prop') {
   Util::checkCsrf();
   $id = (int)($_POST['id'] ?? 0);
-  $pdo->prepare('DELETE FROM asset_property_defs WHERE id=?')->execute([$id]);
+  // Prevent deletion of core/protected properties
+  $ck = $pdo->prepare('SELECT is_core FROM asset_property_defs WHERE id=?');
+  $ck->execute([$id]);
+  $isCore = (int)($ck->fetchColumn() ?: 0);
+  if (!$isCore) { $pdo->prepare('DELETE FROM asset_property_defs WHERE id=?')->execute([$id]); }
   Util::redirect('index.php?page=settings&tab=properties&cat='.(string)$catId);
 }
 
@@ -93,35 +102,40 @@ if ($catId !== null) {
       <div class="table-wrap"><table>
         <thead><tr><th>Key</th><th>Name</th><th>Type</th><th>Show</th><th>Sort</th><th>Active</th><th></th></tr></thead>
         <tbody>
-          <?php foreach ($props as $p): ?>
+          <?php foreach ($props as $p): $isCore=(int)($p['is_core'] ?? 0); ?>
             <tr>
-              <td><code><?= Util::h($p['name_key']) ?></code></td>
+              <td>
+                <code><?= Util::h($p['name_key']) ?></code>
+                <?php if ($isCore): ?><span class="pill" title="Core field">Core</span><?php endif; ?>
+              </td>
               <td>
                 <form method="post" class="actions" style="gap:6px">
                   <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                   <input type="hidden" name="action" value="update_prop">
                   <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
-                  <input name="display_name" value="<?= Util::h($p['display_name']) ?>">
+                  <input name="display_name" value="<?= Util::h($p['display_name']) ?>" <?= $isCore?'disabled':'' ?>>
               </td>
               <td>
-                  <select name="input_type">
+                  <select name="input_type" <?= $isCore?'disabled':'' ?>>
                     <?php foreach (['text','date','number','checkbox'] as $t): ?>
                       <option value="<?= $t ?>" <?= $p['input_type']===$t?'selected':'' ?>><?= ucfirst($t) ?></option>
                     <?php endforeach; ?>
                   </select>
               </td>
-              <td style="text-align:center"><input type="checkbox" name="show_on_view" value="1" <?= $p['show_on_view']?'checked':'' ?>></td>
-              <td><input type="number" name="sort_order" value="<?= (int)$p['sort_order'] ?>" style="width:80px"></td>
-              <td style="text-align:center"><input type="checkbox" name="is_active" value="1" <?= $p['is_active']?'checked':'' ?>></td>
+              <td style="text-align:center"><input type="checkbox" name="show_on_view" value="1" <?= $p['show_on_view']?'checked':'' ?> <?= $isCore?'disabled':'' ?>></td>
+              <td><input type="number" name="sort_order" value="<?= (int)$p['sort_order'] ?>" style="width:80px" <?= $isCore?'disabled':'' ?>></td>
+              <td style="text-align:center"><input type="checkbox" name="is_active" value="1" <?= $p['is_active']?'checked':'' ?> <?= $isCore?'disabled':'' ?>></td>
               <td class="actions">
-                  <button class="btn sm" type="submit">Save</button>
+                  <?php if (!$isCore): ?><button class="btn sm" type="submit">Save</button><?php else: ?><span class="small muted">Protected</span><?php endif; ?>
                 </form>
+                <?php if (!$isCore): ?>
                 <form method="post" onsubmit="return confirmAction('Delete property?')">
                   <input type="hidden" name="csrf" value="<?= Util::csrfToken() ?>">
                   <input type="hidden" name="action" value="delete_prop">
                   <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
                   <button class="btn sm ghost danger">🗑️</button>
                 </form>
+                <?php endif; ?>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -134,4 +148,3 @@ if ($catId !== null) {
     <div class="small muted">Select an asset type to manage its properties.</div>
   </div>
 <?php endif; ?>
-

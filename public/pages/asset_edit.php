@@ -253,7 +253,7 @@ if (($_POST['action'] ?? '') === 'save') {
 
   // Save dynamic custom properties for the selected category
   if (!empty($category_id)) {
-    $stmt = $pdo->prepare('SELECT id, input_type FROM asset_property_defs WHERE is_active=1 AND category_id=?');
+    $stmt = $pdo->prepare('SELECT id, input_type FROM asset_property_defs WHERE is_active=1 AND (is_core=0 OR is_core IS NULL) AND category_id=?');
     $stmt->execute([$category_id]);
     $defs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($defs as $d) {
@@ -485,7 +485,7 @@ if ($isEdit) {
         // Dynamic properties for this category
         $propDefs = [];
         if (!empty($asset['category_id'])) {
-          $stmt = $pdo->prepare('SELECT * FROM asset_property_defs WHERE is_active=1 AND category_id=? ORDER BY sort_order, display_name');
+          $stmt = $pdo->prepare('SELECT * FROM asset_property_defs WHERE is_active=1 AND (is_core=0 OR is_core IS NULL) AND category_id=? ORDER BY sort_order, display_name');
           $stmt->execute([$asset['category_id']]);
           $propDefs = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }

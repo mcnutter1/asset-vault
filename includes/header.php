@@ -106,10 +106,51 @@ $page = $_GET['page'] ?? 'dashboard';
           CONSTRAINT fk_propvals_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
           CONSTRAINT fk_propvals_def FOREIGN KEY (property_def_id) REFERENCES asset_property_defs(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Add core/protected flag if missing
+        try {
+          $col = $pdo->query("SHOW COLUMNS FROM asset_property_defs LIKE 'is_core'")->fetch();
+          if (!$col) {
+            $pdo->exec("ALTER TABLE asset_property_defs ADD COLUMN is_core TINYINT(1) NOT NULL DEFAULT 0 AFTER is_active");
+          }
+        } catch (Throwable $e) { /* ignore */ }
       } catch (Throwable $e) { /* ignore if perms restricted */ }
     }
   }
   av_ensure_asset_properties();
+  // Seed core property definitions per category (idempotent)
+  if (!function_exists('av_seed_core_asset_properties')) {
+    function av_seed_core_asset_properties(){
+      try {
+        $pdo = Database::get();
+        // Ensure column exists before seeding
+        $col = $pdo->query("SHOW COLUMNS FROM asset_property_defs LIKE 'is_core'")->fetch();
+        if (!$col) return;
+        $cats = [];
+        foreach ($pdo->query('SELECT id, name FROM asset_categories') as $r) { $cats[(int)$r['id']] = trim((string)$r['name']); }
+        if (!$cats) return;
+        $ins = $pdo->prepare('INSERT IGNORE INTO asset_property_defs(category_id, name_key, display_name, input_type, show_on_view, sort_order, is_active, is_core) VALUES (?,?,?,?,?,?,1,1)');
+        $add = function($catId, $key, $label, $type, $sort) use ($ins) {
+          if (!$catId) return; $ins->execute([$catId, $key, $label, $type, 0, $sort]);
+        };
+        foreach ($cats as $cid=>$name) {
+          $n = strtolower($name);
+          // Common core fields
+          $add($cid, 'make', 'Make', 'text', 0);
+          $add($cid, 'model', 'Model', 'text', 1);
+          $add($cid, 'serial_number', 'Serial Number', 'text', 2);
+          $add($cid, 'year', 'Year', 'number', 3);
+          if (in_array($n, ['vehicle','car','truck','auto','suv','motorcycle'])) {
+            $add($cid, 'odometer_miles', 'Odometer (miles)', 'number', 4);
+            $add($cid, 'hours_used', 'Hours Used', 'number', 5);
+          }
+          if ($n === 'boat') {
+            $add($cid, 'hours_used', 'Hours Used', 'number', 4);
+          }
+        }
+      } catch (Throwable $e) { /* ignore */ }
+    }
+  }
+  av_seed_core_asset_properties();
   // Ensure policy_types lookup table exists
   if (!function_exists('av_ensure_policy_types')) {
     function av_ensure_policy_types(){

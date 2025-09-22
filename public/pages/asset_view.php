@@ -237,7 +237,7 @@ if ($policies) {
       <div class="asset-attr"><span class="attr-label">Year</span><span class="attr-value"><?= Util::h($asset['year']) ?: '—' ?></span></div>
       <?php if (!empty($asset['category_id'])): ?>
         <?php
-          $st = $pdo->prepare('SELECT id, display_name, input_type FROM asset_property_defs WHERE is_active=1 AND show_on_view=1 AND category_id=? ORDER BY sort_order, display_name');
+$st = $pdo->prepare('SELECT id, display_name, input_type FROM asset_property_defs WHERE is_active=1 AND (is_core=0 OR is_core IS NULL) AND show_on_view=1 AND category_id=? ORDER BY sort_order, display_name');
           $st->execute([$asset['category_id']]);
           $defs = $st->fetchAll();
           if ($defs) {

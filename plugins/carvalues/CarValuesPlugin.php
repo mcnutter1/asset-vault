@@ -142,12 +142,64 @@ class CarValuesPlugin extends BasePlugin
 
         $this->dbg('Preparing property updates; mapped keys: ' . implode(',', array_keys($maps)));
         foreach ($mapPairs as $mapKey => $val) {
-            $pid = $defId($mapKey);
-            if (!$pid) continue;
-            if ($val === '' || $val === null) continue;
-            $ins = $pdo->prepare('INSERT INTO asset_property_values(asset_id, property_def_id, value_text) VALUES (?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text)');
-            $ins->execute([$assetId, $pid, (string)$val]);
-            $updates[] = ['property_def_id'=>$pid, 'key'=>$mapKey, 'value'=>(string)$val];
+            $sel = (string)($maps[$mapKey] ?? '');
+            if ($sel === '' || $val === '' || $val === null) continue;
+            if (strpos($sel, 'core:') === 0) {
+                $core = substr($sel, 5);
+                $this->dbg('Core mapping selected for '.$mapKey.' => '.$core);
+                $col = null;
+                switch ($core) {
+                    case 'year': $col = 'year'; break;
+                    case 'make': $col = 'make'; break;
+                    case 'model': $col = 'model'; break;
+                    case 'vin':
+                    case 'serial_number': $col = 'serial_number'; break;
+                    case 'odometer_miles': $col = 'odometer_miles'; break;
+                    case 'hours_used': $col = 'hours_used'; break;
+                }
+                if ($col) {
+                    $sql = 'UPDATE assets SET '.$col.'=? WHERE id=? LIMIT 1';
+                    $stUp = $pdo->prepare($sql);
+                    $upVal = in_array($col, ['year','odometer_miles','hours_used'], true) ? (int)$val : (string)$val;
+                    $stUp->execute([$upVal, $assetId]);
+                    $updates[] = ['core_field'=>$col, 'key'=>$mapKey, 'value'=>(string)$val];
+                }
+                continue;
+            }
+            if (ctype_digit($sel)) {
+                $pid = (int)$sel;
+                if ($pid > 0) {
+                    // If the selected property def is core/protected, update asset column instead
+                    $pd = $pdo->prepare('SELECT name_key, is_core FROM asset_property_defs WHERE id=?');
+                    $pd->execute([$pid]);
+                    $prow = $pd->fetch(PDO::FETCH_ASSOC) ?: [];
+                    if (!empty($prow) && (int)($prow['is_core'] ?? 0) === 1) {
+                        $core = (string)($prow['name_key'] ?? '');
+                        $this->dbg('Numeric mapping points to core def '.$core.'; updating asset core field');
+                        $col = null;
+                        switch ($core) {
+                            case 'year': $col = 'year'; break;
+                            case 'make': $col = 'make'; break;
+                            case 'model': $col = 'model'; break;
+                            case 'serial_number': $col = 'serial_number'; break;
+                            case 'odometer_miles': $col = 'odometer_miles'; break;
+                            case 'hours_used': $col = 'hours_used'; break;
+                        }
+                        if ($col) {
+                            $sql = 'UPDATE assets SET '.$col.'=? WHERE id=? LIMIT 1';
+                            $stUp = $pdo->prepare($sql);
+                            $upVal = in_array($col, ['year','odometer_miles','hours_used'], true) ? (int)$val : (string)$val;
+                            $stUp->execute([$upVal, $assetId]);
+                            $updates[] = ['core_field'=>$col, 'key'=>$mapKey, 'value'=>(string)$val];
+                            continue;
+                        }
+                    }
+                    // Non-core def: write to dynamic property values
+                    $ins = $pdo->prepare('INSERT INTO asset_property_values(asset_id, property_def_id, value_text) VALUES (?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text)');
+                    $ins->execute([$assetId, $pid, (string)$val]);
+                    $updates[] = ['property_def_id'=>$pid, 'key'=>$mapKey, 'value'=>(string)$val];
+                }
+            }
         }
 
         // Optionally add current value record from market value
