@@ -38,9 +38,13 @@ if (!empty($asset['parent_id'])) {
   $parent = $ps->fetch();
 }
 
-// Linked policies (direct)
+// Linked policies (direct) — ensure uniqueness so multiple coverage links don't duplicate policies
 $policies = [];
-$stmt = $pdo->prepare('SELECT p.id, p.policy_number, p.insurer, p.policy_type, p.start_date, p.end_date FROM policy_assets pa JOIN policies p ON p.id=pa.policy_id WHERE pa.asset_id=? ORDER BY p.end_date DESC');
+$stmt = $pdo->prepare('SELECT DISTINCT p.id, p.policy_number, p.insurer, p.policy_type, p.start_date, p.end_date
+                       FROM policy_assets pa
+                       JOIN policies p ON p.id=pa.policy_id
+                       WHERE pa.asset_id=?
+                       ORDER BY p.end_date DESC');
 $stmt->execute([(int)$asset['id']]);
 $policies = $stmt->fetchAll();
 
@@ -213,6 +217,23 @@ if ($policies) {
   }
 }
 
+// For this asset: gather explicitly linked coverage codes per policy (if multiple links exist)
+$assetPolicyCoverageCodes = [];
+try {
+  $st = $pdo->prepare('SELECT pa.policy_id, pa.coverage_definition_id, cd.code AS coverage_code
+                        FROM policy_assets pa
+                        LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id
+                        WHERE pa.asset_id=? AND pa.coverage_definition_id IS NOT NULL');
+  $st->execute([(int)$asset['id']]);
+  foreach ($st->fetchAll() as $r) {
+    $pid = (int)$r['policy_id'];
+    if (!isset($assetPolicyCoverageCodes[$pid])) $assetPolicyCoverageCodes[$pid] = [];
+    if (!empty($r['coverage_code'])) $assetPolicyCoverageCodes[$pid][] = $r['coverage_code'];
+  }
+  // De-dup codes per policy
+  foreach ($assetPolicyCoverageCodes as $pid=>$codes) { $assetPolicyCoverageCodes[$pid] = array_values(array_unique($codes)); }
+} catch (Throwable $e) { /* tolerate missing columns */ }
+
 ?>
 <div class="card asset-header">
   <div class="asset-primary" style="gap:16px;">
@@ -262,13 +283,41 @@ $st = $pdo->prepare('SELECT id, display_name, input_type FROM asset_property_def
       <div class="insurance-header">Insurance</div>
       <?php if ($policies): ?>
         <div class="policy-list">
-          <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; ?>
+          <?php foreach ($policies as $pol): $pid=(int)$pol['id']; $chosen = $primaryPolicyChosen[$pid] ?? null; $mappedCodes = $assetPolicyCoverageCodes[$pid] ?? []; ?>
             <div class="policy-item">
               <div><span class="p-label">Policy #</span><span class="p-value"><?= Util::h($pol['policy_number']) ?></span></div>
               <div><span class="p-label">Insurer</span><span class="p-value"><?= Util::h($pol['insurer']) ?></span></div>
               <div><span class="p-label">Type</span><span class="p-value"><?= Util::h($pol['policy_type']) ?></span></div>
-              <div><span class="p-label">Primary Coverage</span><span class="p-value"><?= $chosen? '<span class="coverage-badge">'.Util::h($chosen['code']).'</span>' : '—' ?></span></div>
-              <div><span class="p-label">Limit</span><span class="p-value"><?= ($chosen && $chosen['limit_amount']!==null)? '$'.number_format((float)$chosen['limit_amount'],0) : '—' ?></span></div>
+              <div>
+                <span class="p-label">Coverage<?= count($mappedCodes) > 1 ? 's' : '' ?></span>
+                <span class="p-value">
+                  <?php if (!empty($mappedCodes)): ?>
+                    <?php foreach ($mappedCodes as $code): ?>
+                      <span class="coverage-badge"><?= Util::h($code) ?></span>
+                    <?php endforeach; ?>
+                  <?php else: ?>
+                    <?= $chosen? '<span class="coverage-badge">'.Util::h($chosen['code']).'</span>' : '—' ?>
+                  <?php endif; ?>
+                </span>
+              </div>
+              <div>
+                <span class="p-label">Limit</span>
+                <span class="p-value">
+                  <?php
+                    // If a single mapped coverage exists, show its limit; otherwise show chosen's limit; fallback to —
+                    $limitOut = '—';
+                    if (count($mappedCodes) === 1) {
+                      $code = $mappedCodes[0];
+                      if (!empty($coverageByPolicy[$pid][$code]) && $coverageByPolicy[$pid][$code]['limit_amount'] !== null) {
+                        $limitOut = '$'.number_format((float)$coverageByPolicy[$pid][$code]['limit_amount'], 0);
+                      }
+                    } elseif (!$mappedCodes && $chosen && $chosen['limit_amount']!==null) {
+                      $limitOut = '$'.number_format((float)$chosen['limit_amount'], 0);
+                    }
+                    echo $limitOut;
+                  ?>
+                </span>
+              </div>
             </div>
           <?php endforeach; ?>
         </div>
