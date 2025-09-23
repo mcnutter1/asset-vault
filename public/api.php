@@ -256,6 +256,38 @@ function enrich_asset_min(PDO $pdo, array &$asset, array $include): void {
     if (!empty($include['policies'])) {
         $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, pa.applies_to_children, pa.coverage_definition_id, cd.code AS coverage_code, cd.name AS coverage_name FROM policy_assets pa JOIN policies p ON p.id=pa.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id WHERE pa.asset_id=? ORDER BY p.policy_number");
         $st->execute([$asset['id']]); $asset['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        // Merge inherited policies from ancestors into policies array
+        $anc = [];
+        $cur = $asset['parent_id'] ?? null;
+        while ($cur) {
+            $st2 = $pdo->prepare('SELECT id, parent_id FROM assets WHERE id=?'); $st2->execute([$cur]); $row = $st2->fetch(PDO::FETCH_ASSOC);
+            if (!$row) break; $anc[] = (int)$row['id']; $cur = $row['parent_id'];
+        }
+        if ($anc) {
+            $in = implode(',', array_fill(0, count($anc), '?'));
+            $paHasChildCov = column_exists($pdo, 'policy_assets', 'children_coverage_definition_id');
+            $covExpr = $paHasChildCov ? 'COALESCE(pa.children_coverage_definition_id, pa.coverage_definition_id)' : 'pa.coverage_definition_id';
+            $sql = "SELECT pa.asset_id AS source_asset_id, p.id, p.policy_number, p.insurer, pa.applies_to_children, $covExpr AS coverage_definition_id, cd.code AS coverage_code, cd.name AS coverage_name
+                    FROM policy_assets pa
+                    JOIN policies p ON p.id=pa.policy_id
+                    LEFT JOIN coverage_definitions cd ON cd.id=$covExpr
+                    WHERE pa.asset_id IN ($in) AND pa.applies_to_children=1";
+            $st3 = $pdo->prepare($sql); $st3->execute($anc); $inherited = $st3->fetchAll(PDO::FETCH_ASSOC);
+            if ($inherited) {
+                // Build dedup set of direct (policy_id + coverage_def)
+                $seen = [];
+                foreach ($asset['policies'] as $dp) {
+                    $key = ((int)$dp['id']).':'.((int)($dp['coverage_definition_id'] ?? 0));
+                    $seen[$key] = true;
+                }
+                foreach ($inherited as $ip) {
+                    $key = ((int)$ip['id']).':'.((int)($ip['coverage_definition_id'] ?? 0));
+                    if (isset($seen[$key])) continue; // skip duplicate
+                    $ip['is_inherited'] = 1;
+                    $asset['policies'][] = $ip;
+                }
+            }
+        }
         if (!empty($include['links'])) {
             $settingsUrl = Util::baseUrl('index.php?page=settings&tab=coverages');
             foreach ($asset['policies'] as &$p) {
@@ -399,7 +431,7 @@ function enrich_asset_full(PDO $pdo, array &$asset, array $include = []): void {
     if ($ancestors) {
         $in = implode(',', array_fill(0, count($ancestors), '?'));
         $covExpr = $paHasChildCov ? 'COALESCE(pa.children_coverage_definition_id, pa.coverage_definition_id)' : 'pa.coverage_definition_id';
-        $sql = "SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type,
+        $sql = "SELECT pa.asset_id AS source_asset_id, p.id, p.policy_number, p.insurer, p.status, p.policy_type,
                        pa.applies_to_children,
                        $covExpr AS coverage_definition_id,
                        cd.code AS coverage_code, cd.name AS coverage_name,
@@ -417,6 +449,22 @@ function enrich_asset_full(PDO $pdo, array &$asset, array $include = []): void {
         }
     } else {
         $asset['policies_inherited'] = [];
+    }
+
+    // Merge inherited policies into primary policies array with is_inherited flag and de-dup
+    if (!isset($asset['policies']) || !is_array($asset['policies'])) { $asset['policies'] = []; }
+    if (!empty($asset['policies_inherited'])) {
+        $seen = [];
+        foreach ($asset['policies'] as $dp) {
+            $key = ((int)$dp['id']).':'.((int)($dp['coverage_definition_id'] ?? 0));
+            $seen[$key] = true;
+        }
+        foreach ($asset['policies_inherited'] as $ip) {
+            $key = ((int)$ip['id']).':'.((int)($ip['coverage_definition_id'] ?? 0));
+            if (isset($seen[$key])) continue;
+            $ip['is_inherited'] = 1;
+            $asset['policies'][] = $ip;
+        }
     }
 
     // Owners / users linked to asset
