@@ -10,7 +10,8 @@ return [
         'charset' => 'utf8mb4',
     ],
     'app' => [
-        'base_url' => '/',
+        // Absolute base URL for building full links (used by QR codes, emails, etc.)
+        'base_url' => 'https://vault.mcnutt.cloud/',
         'uploads_dir' => __DIR__ . '/public/uploads',
         'uploads_url' => '/uploads',
         'debug' => true,

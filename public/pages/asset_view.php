@@ -287,6 +287,14 @@ $st = $pdo->prepare('SELECT id, display_name, input_type FROM asset_property_def
       </div>
     <?php endif; ?>
   </div>
+  <?php // Right column: QR code for public link ?>
+  <div>
+    <?php $publicUrl = Util::baseUrl('index.php?page=asset_view&code='.$asset['public_token']); ?>
+    <div aria-label="QR" title="QR Code" data-qr="<?= Util::h($publicUrl) ?>" data-qr-size="180" style="width:180px;height:180px;border:1px solid var(--border);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:0 auto;"></div>
+    <div class="small muted" style="margin-top:6px; text-align:center; word-break:break-all;">
+      <a href="<?= $publicUrl ?>" target="_blank">Public Link</a>
+    </div>
+  </div>
 </div>
 
 <!-- Dashboard-style stat cards for values -->
