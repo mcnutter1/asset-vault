@@ -404,7 +404,7 @@ if ($isEdit) {
       <div class="small muted">Public URL: <a href="<?= $publicUrl ?>" target="_blank"><?= $publicUrl ?></a></div>
     </div>
     <div class="header-right">
-      <img alt="QR" style="height:110px;border:1px solid var(--border);border-radius:10px;background:#fff" src="https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl=<?= urlencode($publicUrl) ?>&choe=UTF-8">
+      <div aria-label="QR" title="QR Code" data-qr="<?= Util::h($publicUrl) ?>" data-qr-size="110" style="width:110px;height:110px;border:1px solid var(--border);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden"></div>
     </div>
   </div>
 </div>

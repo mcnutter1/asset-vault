@@ -107,12 +107,58 @@ function initDOM(){
   initPolicyCoverageFilter();
   initAssetsFilter();
   initNavToggle();
+  initQR();
 }
 
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', initDOM);
 } else {
   initDOM();
+}
+
+// Dynamically load a script and invoke cb(true|false) when loaded/failed
+function loadScript(src, cb){
+  const s = document.createElement('script');
+  s.src = src; s.async = true;
+  s.onload = ()=> cb && cb(true);
+  s.onerror = ()=> cb && cb(false);
+  document.head.appendChild(s);
+}
+
+// Initialize client-side QR codes for any element with [data-qr]
+function initQR(){
+  const nodes = qsa('[data-qr]');
+  if (!nodes.length) return;
+  function renderAll(){
+    nodes.forEach(el=>{
+      const text = el.getAttribute('data-qr') || '';
+      const size = parseInt(el.getAttribute('data-qr-size')||'180',10);
+      try {
+        el.innerHTML='';
+        if (window.QRCode) {
+          new QRCode(el, { text, width: size, height: size, correctLevel: (window.QRCode.CorrectLevel && window.QRCode.CorrectLevel.H) || 0 });
+        } else {
+          // Last-resort: external image fallback (may be blocked by network policy)
+          const img = new Image();
+          img.alt = 'QR';
+          img.width = size; img.height = size;
+          img.style.maxWidth = '100%'; img.style.maxHeight = '100%';
+          img.src = 'https://chart.googleapis.com/chart?cht=qr&chs=' + size + 'x' + size + '&chl=' + encodeURIComponent(text) + '&choe=UTF-8';
+          el.appendChild(img);
+        }
+      } catch(e) { /* ignore */ }
+    });
+  }
+  if (window.QRCode) return renderAll();
+  // Try local copy first, then CDN fallback
+  var baseEl = document.querySelector('base');
+  var baseHref = baseEl ? baseEl.href : '';
+  loadScript(baseHref + 'assets/js/qrcode.min.js', ok => {
+    if (ok && window.QRCode) return renderAll();
+    loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js', ok2 => {
+      renderAll();
+    });
+  });
 }
 
 // Filter coverage list by selected policy on the person edit page
