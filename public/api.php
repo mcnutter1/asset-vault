@@ -3,12 +3,12 @@
 // Endpoints:
 //   GET  /api.php?entity=assets|people|policies[&id=123]  -> list or detail
 //   POST /api.php  with JSON { entity, updates: [ {id, fields:{...}}, ... ] }
-// Auth:
-//   Provide API token via one of:
-//     - Authorization: Bearer <token>
-//     - X-API-Key: <token>
-//     - ?token=<token>
-//   Token is validated against SSO validate endpoint from public/config.php.
+// Auth (API Key based):
+//   Provide API key via one of:
+//     - Authorization: Bearer <api_key>
+//     - X-API-Key: <api_key>
+//     - ?api_key=<api_key>
+//   API keys are validated using helpers in auth.php.
 
 require_once __DIR__ . '/../lib/Database.php';
 require_once __DIR__ . '/../lib/Util.php';
@@ -18,26 +18,16 @@ header('Content-Type: application/json');
 
 function api_out($data, int $code = 200){ http_response_code($code); echo json_encode($data); exit; }
 
-// Extract API token from headers/query
-function api_get_token(): ?string {
-    $hdrs = function_exists('getallheaders') ? (getallheaders() ?: []) : [];
-    $auth = $hdrs['Authorization'] ?? $hdrs['authorization'] ?? '';
-    if (stripos($auth, 'Bearer ') === 0) return trim(substr($auth, 7));
-    $x = $hdrs['X-API-Key'] ?? $hdrs['x-api-key'] ?? null;
-    if ($x) return trim($x);
-    if (!empty($_GET['token'])) return (string)$_GET['token'];
-    return null;
-}
+// Extract API key from headers/query
+// Use extract_api_key_c() from auth.php
+function api_get_api_key(): ?string { return extract_api_key_c(); }
 
-// Validate token using existing revalidate() from auth.php and return payload from cookie
+// Validate API key using helpers from auth.php and enforce roles
 function api_authenticate(): array {
-    global $config; // from public/auth.php
-    $token = api_get_token();
-    if (!$token) api_out(['ok'=>false,'error'=>'Missing API token'], 401);
-    if (!revalidate($token)) api_out(['ok'=>false,'error'=>'Invalid token'], 401);
-    $cookieRaw = $_COOKIE[$config['cookie_name']] ?? '';
-    $payload = $cookieRaw ? (json_decode($cookieRaw, true) ?: null) : null;
-    if (!$payload) api_out(['ok'=>false,'error'=>'Auth payload unavailable'], 401);
+    $apiKey = api_get_api_key();
+    if (!$apiKey) api_out(['ok'=>false,'error'=>'Missing API key'], 401);
+    $payload = validate_api_key_c($apiKey);
+    if (!$payload) api_out(['ok'=>false,'error'=>'Invalid API key'], 401);
     $roles = $payload['roles'] ?? [];
     if (!array_intersect($roles, ['vault','admin'])) api_out(['ok'=>false,'error'=>'Not authorized'], 403);
     return $payload;

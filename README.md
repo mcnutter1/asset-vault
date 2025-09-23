@@ -32,8 +32,9 @@ Structure
 - `schema.sql` — database schema and seeds
 
 API
-- `public/api.php` provides a JSON API with token auth.
-  - Auth: send `Authorization: Bearer <token>` or `X-API-Key: <token>`; tokens are validated via the SSO `validate_endpoint`.
+- `public/api.php` provides a JSON API with API key auth.
+  - Auth: send `Authorization: Bearer <api_key>` or `X-API-Key: <api_key>` (or `?api_key=`)
+    - Keys are validated via the login server using `validate_api_key_c` from `public/auth.php`.
   - GET lists: `GET /api.php?entity=assets|people|policies[&limit=100&offset=0&q=...]`
   - GET detail: `GET /api.php?entity=assets|people|policies&id=123`
   - POST bulk updates: `POST /api.php` with JSON body `{ "entity": "assets|people|policies", "updates": [ { "id": 1, "fields": { ... } } ] }`
