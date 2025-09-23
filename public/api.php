@@ -139,13 +139,13 @@ function list_entities(PDO $pdo, string $entity, array $include = []): array {
             $sql .= ' ORDER BY a.id DESC LIMIT '.$limit.' OFFSET '.$offset;
             $st = $pdo->prepare($sql); $st->execute($params);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-            if ($include) {
-                foreach ($rows as &$r) {
-                    if (!empty($include['links'])) attach_links($r, 'assets');
-                    enrich_asset_min($pdo, $r, $include);
-                }
-                unset($r);
+            // Default includes for assets list when none provided (allow include=none to disable)
+            $inc = isset($include['none']) ? [] : ($include ?: ['links'=>true,'owners'=>true,'policies'=>true,'values'=>true]);
+            foreach ($rows as &$r) {
+                if (!empty($inc['links'])) attach_links($r, 'assets');
+                enrich_asset_min($pdo, $r, $inc);
             }
+            unset($r);
             return ['ok'=>true,'data'=>$rows,'count'=>count($rows)];
         }
         case 'people': {
@@ -241,17 +241,28 @@ function enrich_asset_min(PDO $pdo, array &$asset, array $include): void {
         if (table_exists($pdo, 'person_assets')) {
             $st = $pdo->prepare("SELECT p.id, p.first_name, p.last_name, pa.role FROM person_assets pa JOIN people p ON p.id=pa.person_id WHERE pa.asset_id=? ORDER BY p.last_name, p.first_name");
             $st->execute([$asset['id']]); $asset['owners'] = $st->fetchAll(PDO::FETCH_ASSOC);
-            if (!empty($include['links'])) {
-                foreach ($asset['owners'] as &$o) { $o['api_url'] = api_entity_url('people', (int)$o['id']); $o['html_url'] = html_entity_url('people', (int)$o['id']); }
+            if (!empty($asset['owners'])) {
+                foreach ($asset['owners'] as &$o) {
+                    $o['display_name'] = trim(($o['first_name'] ?? '').' '.($o['last_name'] ?? ''));
+                    if (!empty($include['links'])) {
+                        $o['api_url'] = api_entity_url('people', (int)$o['id']);
+                        $o['html_url'] = html_entity_url('people', (int)$o['id']);
+                    }
+                }
                 unset($o);
             }
         } else { $asset['owners'] = []; }
     }
     if (!empty($include['policies'])) {
-        $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, pa.applies_to_children, pa.coverage_definition_id, cd.name AS coverage_name FROM policy_assets pa JOIN policies p ON p.id=pa.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id WHERE pa.asset_id=? ORDER BY p.policy_number");
+        $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, pa.applies_to_children, pa.coverage_definition_id, cd.code AS coverage_code, cd.name AS coverage_name FROM policy_assets pa JOIN policies p ON p.id=pa.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id WHERE pa.asset_id=? ORDER BY p.policy_number");
         $st->execute([$asset['id']]); $asset['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
         if (!empty($include['links'])) {
-            foreach ($asset['policies'] as &$p) { $p['api_url'] = api_entity_url('policies', (int)$p['id']); $p['html_url'] = html_entity_url('policies', (int)$p['id']); }
+            $settingsUrl = Util::baseUrl('index.php?page=settings&tab=coverages');
+            foreach ($asset['policies'] as &$p) {
+                $p['api_url'] = api_entity_url('policies', (int)$p['id']);
+                $p['html_url'] = html_entity_url('policies', (int)$p['id']);
+                $p['coverage_settings_url'] = $settingsUrl;
+            }
             unset($p);
         }
     }
@@ -366,7 +377,7 @@ function enrich_asset_full(PDO $pdo, array &$asset, array $include = []): void {
     $childSel = $paHasChildCov ? 'pa.children_coverage_definition_id,' : '';
     $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type,
                                 pa.applies_to_children, pa.coverage_definition_id, $childSel
-                                cd.name AS coverage_name, $pcCols
+                                cd.code AS coverage_code, cd.name AS coverage_name, $pcCols
                          FROM policy_assets pa
                          JOIN policies p ON p.id=pa.policy_id
                          LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id
@@ -391,7 +402,7 @@ function enrich_asset_full(PDO $pdo, array &$asset, array $include = []): void {
         $sql = "SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type,
                        pa.applies_to_children,
                        $covExpr AS coverage_definition_id,
-                       cd.name AS coverage_name,
+                       cd.code AS coverage_code, cd.name AS coverage_name,
                        $pcCols
                 FROM policy_assets pa
                 JOIN policies p ON p.id=pa.policy_id
@@ -412,8 +423,14 @@ function enrich_asset_full(PDO $pdo, array &$asset, array $include = []): void {
     if (table_exists($pdo, 'person_assets')) {
         $st = $pdo->prepare("SELECT p.id, p.first_name, p.last_name, pa.role FROM person_assets pa JOIN people p ON p.id=pa.person_id WHERE pa.asset_id=? ORDER BY p.last_name, p.first_name");
         $st->execute([$asset['id']]); $asset['owners'] = $st->fetchAll(PDO::FETCH_ASSOC);
-        if (!empty($include['links']) && $asset['owners']) {
-            foreach ($asset['owners'] as &$o) { $o['api_url'] = api_entity_url('people', (int)$o['id']); $o['html_url'] = html_entity_url('people', (int)$o['id']); }
+        if (!empty($asset['owners'])) {
+            foreach ($asset['owners'] as &$o) {
+                $o['display_name'] = trim(($o['first_name'] ?? '').' '.($o['last_name'] ?? ''));
+                if (!empty($include['links'])) {
+                    $o['api_url'] = api_entity_url('people', (int)$o['id']);
+                    $o['html_url'] = html_entity_url('people', (int)$o['id']);
+                }
+            }
             unset($o);
         }
     } else { $asset['owners'] = []; }
