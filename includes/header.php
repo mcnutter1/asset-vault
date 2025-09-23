@@ -154,12 +154,12 @@ $page = $_GET['page'] ?? 'dashboard';
           }
           if (in_array($n, ['home','house','property','residence'])) {
             // Dynamic fields for home/Zillow mappings
-            $addDyn($cid, 'sq_ft', 'Square Feet', 'number', 10, 1);
-            $addDyn($cid, 'beds', 'Beds', 'number', 11, 1);
-            $addDyn($cid, 'baths', 'Baths', 'number', 12, 1);
-            $addDyn($cid, 'year_built', 'Year Built', 'number', 13, 1);
-            $addDyn($cid, 'lot_size_acres', 'Lot Size (acres)', 'number', 14, 1);
-            $addDyn($cid, 'zillow_url', 'Zillow URL', 'text', 15, 1);
+            #$addDyn($cid, 'sq_ft', 'Square Feet', 'number', 10, 1);
+            #$addDyn($cid, 'beds', 'Beds', 'number', 11, 1);
+            #$addDyn($cid, 'baths', 'Baths', 'number', 12, 1);
+            #$addDyn($cid, 'year_built', 'Year Built', 'number', 13, 1);
+            #$addDyn($cid, 'lot_size_acres', 'Lot Size (acres)', 'number', 14, 1);
+            #$addDyn($cid, 'zillow_url', 'Zillow URL', 'text', 15, 1);
           }
         }
       } catch (Throwable $e) { /* ignore */ }
