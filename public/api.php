@@ -48,6 +48,52 @@ function parse_includes(): array {
     return $set;
 }
 
+// Lightweight helpers for schema checks (tolerate limited DB grants)
+function table_exists(PDO $pdo, string $table): bool {
+    try {
+        $st = $pdo->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1");
+        $st->execute([$table]);
+        return (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        // Fallback: try a harmless query
+        try { $pdo->query("SELECT 1 FROM `".$table."` LIMIT 0"); return true; } catch (Throwable $e2) { return false; }
+    }
+}
+
+function column_exists(PDO $pdo, string $table, string $column): bool {
+    try {
+        $st = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1");
+        $st->execute([$table, $column]);
+        return (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        // Fallback: attempt selecting column (will fail if missing)
+        try { $pdo->query("SELECT `".$column."` FROM `".$table."` LIMIT 0"); return true; } catch (Throwable $e2) { return false; }
+    }
+}
+
+// Link builders
+function api_entity_url(string $entity, int $id): string {
+    return Util::baseUrl('api.php?entity='.rawurlencode($entity).'&id='.$id);
+}
+
+function html_entity_url(string $entity, int $id): string {
+    switch ($entity) {
+        case 'assets': return Util::baseUrl('index.php?page=asset_view&id='.$id);
+        case 'people': return Util::baseUrl('index.php?page=person_view&id='.$id);
+        case 'policies': return Util::baseUrl('index.php?page=policy_edit&id='.$id);
+        default: return Util::baseUrl('index.php');
+    }
+}
+
+function attach_links(array &$row, string $entity): void {
+    if (!isset($row['id'])) return;
+    $id = (int)$row['id'];
+    $row['links'] = [
+        'api'  => api_entity_url($entity, $id),
+        'html' => html_entity_url($entity, $id),
+    ];
+}
+
 // Sanitize whitelist of columns for each entity
 function allowed_columns_for(string $entity): array {
     switch ($entity) {
@@ -94,7 +140,10 @@ function list_entities(PDO $pdo, string $entity, array $include = []): array {
             $st = $pdo->prepare($sql); $st->execute($params);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
             if ($include) {
-                foreach ($rows as &$r) { enrich_asset_min($pdo, $r, $include); }
+                foreach ($rows as &$r) {
+                    if (!empty($include['links'])) attach_links($r, 'assets');
+                    enrich_asset_min($pdo, $r, $include);
+                }
                 unset($r);
             }
             return ['ok'=>true,'data'=>$rows,'count'=>count($rows)];
@@ -115,7 +164,10 @@ function list_entities(PDO $pdo, string $entity, array $include = []): array {
             $st = $pdo->prepare($sql); $st->execute($params);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
             if ($include) {
-                foreach ($rows as &$r) { enrich_person_min($pdo, $r, $include); }
+                foreach ($rows as &$r) {
+                    if (!empty($include['links'])) attach_links($r, 'people');
+                    enrich_person_min($pdo, $r, $include);
+                }
                 unset($r);
             }
             return ['ok'=>true,'data'=>$rows,'count'=>count($rows)];
@@ -138,7 +190,10 @@ function list_entities(PDO $pdo, string $entity, array $include = []): array {
             $st = $pdo->prepare($sql); $st->execute($params);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
             if ($include) {
-                foreach ($rows as &$r) { enrich_policy_min($pdo, $r, $include); }
+                foreach ($rows as &$r) {
+                    if (!empty($include['links'])) attach_links($r, 'policies');
+                    enrich_policy_min($pdo, $r, $include);
+                }
                 unset($r);
             }
             return ['ok'=>true,'data'=>$rows,'count'=>count($rows)];
@@ -149,27 +204,30 @@ function list_entities(PDO $pdo, string $entity, array $include = []): array {
 }
 
 // Detail endpoints
-function get_entity(PDO $pdo, string $entity, int $id): array {
+function get_entity(PDO $pdo, string $entity, int $id, array $include = []): array {
     switch ($entity) {
         case 'assets': {
             $st = $pdo->prepare('SELECT a.*, ac.name AS category_name FROM assets a LEFT JOIN asset_categories ac ON ac.id=a.category_id WHERE a.id=? AND a.is_deleted=0');
             $st->execute([$id]); $row = $st->fetch(PDO::FETCH_ASSOC);
             if (!$row) return ['ok'=>false,'error'=>'Not found', 'code'=>404];
-            enrich_asset_full($pdo, $row);
+            if (!empty($include['links'])) attach_links($row, 'assets');
+            enrich_asset_full($pdo, $row, $include);
             return ['ok'=>true,'data'=>$row];
         }
         case 'people': {
             $st = $pdo->prepare('SELECT * FROM people WHERE id=?');
             $st->execute([$id]); $row = $st->fetch(PDO::FETCH_ASSOC);
             if (!$row) return ['ok'=>false,'error'=>'Not found', 'code'=>404];
-            enrich_person_full($pdo, $row);
+            if (!empty($include['links'])) attach_links($row, 'people');
+            enrich_person_full($pdo, $row, $include);
             return ['ok'=>true,'data'=>$row];
         }
         case 'policies': {
             $st = $pdo->prepare('SELECT * FROM policies WHERE id=?');
             $st->execute([$id]); $row = $st->fetch(PDO::FETCH_ASSOC);
             if (!$row) return ['ok'=>false,'error'=>'Not found', 'code'=>404];
-            enrich_policy_full($pdo, $row);
+            if (!empty($include['links'])) attach_links($row, 'policies');
+            enrich_policy_full($pdo, $row, $include);
             return ['ok'=>true,'data'=>$row];
         }
         default:
@@ -183,11 +241,19 @@ function enrich_asset_min(PDO $pdo, array &$asset, array $include): void {
         if (table_exists($pdo, 'person_assets')) {
             $st = $pdo->prepare("SELECT p.id, p.first_name, p.last_name, pa.role FROM person_assets pa JOIN people p ON p.id=pa.person_id WHERE pa.asset_id=? ORDER BY p.last_name, p.first_name");
             $st->execute([$asset['id']]); $asset['owners'] = $st->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($include['links'])) {
+                foreach ($asset['owners'] as &$o) { $o['api_url'] = api_entity_url('people', (int)$o['id']); $o['html_url'] = html_entity_url('people', (int)$o['id']); }
+                unset($o);
+            }
         } else { $asset['owners'] = []; }
     }
     if (!empty($include['policies'])) {
         $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, pa.applies_to_children, pa.coverage_definition_id, cd.name AS coverage_name FROM policy_assets pa JOIN policies p ON p.id=pa.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id WHERE pa.asset_id=? ORDER BY p.policy_number");
         $st->execute([$asset['id']]); $asset['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links'])) {
+            foreach ($asset['policies'] as &$p) { $p['api_url'] = api_entity_url('policies', (int)$p['id']); $p['html_url'] = html_entity_url('policies', (int)$p['id']); }
+            unset($p);
+        }
     }
     if (!empty($include['values'])) {
         $st = $pdo->prepare("SELECT value_type, amount, valuation_date, source FROM asset_values WHERE asset_id=? ORDER BY valuation_date");
@@ -200,11 +266,19 @@ function enrich_person_min(PDO $pdo, array &$person, array $include): void {
         if (table_exists($pdo, 'person_assets')) {
             $st = $pdo->prepare("SELECT a.id, a.name, pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? AND a.is_deleted=0 ORDER BY a.name");
             $st->execute([$person['id']]); $person['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($include['links'])) {
+                foreach ($person['assets'] as &$a) { $a['api_url'] = api_entity_url('assets', (int)$a['id']); $a['html_url'] = html_entity_url('assets', (int)$a['id']); }
+                unset($a);
+            }
         } else { $person['assets'] = []; }
     }
     if (!empty($include['policies'])) {
         $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, pp.role, pp.coverage_definition_id, cd.name AS coverage_name FROM policy_people pp JOIN policies p ON p.id=pp.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id WHERE pp.person_id=? ORDER BY p.policy_number");
         $st->execute([$person['id']]); $person['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links'])) {
+            foreach ($person['policies'] as &$p) { $p['api_url'] = api_entity_url('policies', (int)$p['id']); $p['html_url'] = html_entity_url('policies', (int)$p['id']); }
+            unset($p);
+        }
     }
 }
 
@@ -214,19 +288,32 @@ function enrich_policy_min(PDO $pdo, array &$policy, array $include): void {
         $cols = 'pc.coverage_definition_id, cd.code, cd.name, pc.limit_amount, pc.deductible_amount'.($hasAcv? ', pc.is_acv':'');
         $st = $pdo->prepare("SELECT $cols FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id WHERE pc.policy_id=? ORDER BY cd.name");
         $st->execute([$policy['id']]); $policy['coverages'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links'])) {
+            $settingsUrl = Util::baseUrl('index.php?page=settings&tab=coverages');
+            foreach ($policy['coverages'] as &$c) { $c['settings_url'] = $settingsUrl; }
+            unset($c);
+        }
     }
     if (!empty($include['assets'])) {
         $st = $pdo->prepare("SELECT pa.asset_id, a.name, pa.applies_to_children, pa.coverage_definition_id, cd.name AS coverage_name FROM policy_assets pa JOIN assets a ON a.id=pa.asset_id LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id WHERE pa.policy_id=? AND a.is_deleted=0 ORDER BY a.name");
         $st->execute([$policy['id']]); $policy['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links'])) {
+            foreach ($policy['assets'] as &$a) { $a['api_url'] = api_entity_url('assets', (int)$a['asset_id']); $a['html_url'] = html_entity_url('assets', (int)$a['asset_id']); }
+            unset($a);
+        }
     }
     if (!empty($include['people'])) {
         $st = $pdo->prepare("SELECT pp.person_id, p.first_name, p.last_name, pp.role, pp.coverage_definition_id, cd.name AS coverage_name FROM policy_people pp JOIN people p ON p.id=pp.person_id LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id WHERE pp.policy_id=? ORDER BY p.last_name, p.first_name");
         $st->execute([$policy['id']]); $policy['people'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links'])) {
+            foreach ($policy['people'] as &$p) { $p['api_url'] = api_entity_url('people', (int)$p['person_id']); $p['html_url'] = html_entity_url('people', (int)$p['person_id']); }
+            unset($p);
+        }
     }
 }
 
 // Full enrichers for detail endpoints
-function enrich_asset_full(PDO $pdo, array &$asset): void {
+function enrich_asset_full(PDO $pdo, array &$asset, array $include = []): void {
     // Values timeline
     $st = $pdo->prepare("SELECT value_type, amount, valuation_date, source FROM asset_values WHERE asset_id=? ORDER BY valuation_date");
     $st->execute([$asset['id']]); $asset['values'] = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -255,6 +342,10 @@ function enrich_asset_full(PDO $pdo, array &$asset): void {
     // Files metadata (no content)
     $st = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='asset' AND entity_id=? ORDER BY uploaded_at DESC");
     $st->execute([$asset['id']]); $asset['files'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $asset['files']) {
+        foreach ($asset['files'] as &$f) { $f['url'] = Util::baseUrl('file.php?id='.(int)$f['id']); }
+        unset($f);
+    }
 
     // Locations
     $st = $pdo->prepare("SELECT id, parent_id, name, description FROM asset_locations WHERE asset_id=? ORDER BY name");
@@ -263,6 +354,10 @@ function enrich_asset_full(PDO $pdo, array &$asset): void {
     // Children assets (minimal)
     $st = $pdo->prepare("SELECT id, name FROM assets WHERE parent_id=? AND is_deleted=0 ORDER BY name");
     $st->execute([$asset['id']]); $asset['children'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $asset['children']) {
+        foreach ($asset['children'] as &$c) { $c['api_url'] = api_entity_url('assets', (int)$c['id']); $c['html_url'] = html_entity_url('assets', (int)$c['id']); }
+        unset($c);
+    }
 
     // Direct policies with coverage mapping (tolerate optional columns)
     $pcHasAcv = column_exists($pdo, 'policy_coverages', 'is_acv');
@@ -278,6 +373,10 @@ function enrich_asset_full(PDO $pdo, array &$asset): void {
                          LEFT JOIN policy_coverages pc ON pc.policy_id=p.id AND pc.coverage_definition_id=pa.coverage_definition_id
                          WHERE pa.asset_id=? ORDER BY p.policy_number ASC");
     $st->execute([$asset['id']]); $asset['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $asset['policies']) {
+        foreach ($asset['policies'] as &$p) { $p['api_url'] = api_entity_url('policies', (int)$p['id']); $p['html_url'] = html_entity_url('policies', (int)$p['id']); }
+        unset($p);
+    }
 
     // Inherited policies from ancestors
     $ancestors = [];
@@ -301,6 +400,10 @@ function enrich_asset_full(PDO $pdo, array &$asset): void {
                 WHERE pa.asset_id IN ($in) AND pa.applies_to_children=1
                 ORDER BY p.end_date DESC";
         $st = $pdo->prepare($sql); $st->execute($ancestors); $asset['policies_inherited'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links']) && $asset['policies_inherited']) {
+            foreach ($asset['policies_inherited'] as &$ip) { $ip['api_url'] = api_entity_url('policies', (int)$ip['id']); $ip['html_url'] = html_entity_url('policies', (int)$ip['id']); }
+            unset($ip);
+        }
     } else {
         $asset['policies_inherited'] = [];
     }
@@ -309,14 +412,22 @@ function enrich_asset_full(PDO $pdo, array &$asset): void {
     if (table_exists($pdo, 'person_assets')) {
         $st = $pdo->prepare("SELECT p.id, p.first_name, p.last_name, pa.role FROM person_assets pa JOIN people p ON p.id=pa.person_id WHERE pa.asset_id=? ORDER BY p.last_name, p.first_name");
         $st->execute([$asset['id']]); $asset['owners'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links']) && $asset['owners']) {
+            foreach ($asset['owners'] as &$o) { $o['api_url'] = api_entity_url('people', (int)$o['id']); $o['html_url'] = html_entity_url('people', (int)$o['id']); }
+            unset($o);
+        }
     } else { $asset['owners'] = []; }
 }
 
-function enrich_person_full(PDO $pdo, array &$person): void {
+function enrich_person_full(PDO $pdo, array &$person, array $include = []): void {
     // Assets linked
     if (table_exists($pdo, 'person_assets')) {
         $st = $pdo->prepare("SELECT a.id, a.name, pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? AND a.is_deleted=0 ORDER BY a.name");
         $st->execute([$person['id']]); $person['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($include['links']) && $person['assets']) {
+            foreach ($person['assets'] as &$a) { $a['api_url'] = api_entity_url('assets', (int)$a['id']); $a['html_url'] = html_entity_url('assets', (int)$a['id']); }
+            unset($a);
+        }
     } else { $person['assets'] = []; }
     // Policies linked
     $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type, pp.role, pp.coverage_definition_id, cd.name AS coverage_name
@@ -324,17 +435,30 @@ function enrich_person_full(PDO $pdo, array &$person): void {
                          LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id
                          WHERE pp.person_id=? ORDER BY p.policy_number");
     $st->execute([$person['id']]); $person['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $person['policies']) {
+        foreach ($person['policies'] as &$p) { $p['api_url'] = api_entity_url('policies', (int)$p['id']); $p['html_url'] = html_entity_url('policies', (int)$p['id']); }
+        unset($p);
+    }
     // Files
     $st = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='person' AND entity_id=? ORDER BY uploaded_at DESC");
     $st->execute([$person['id']]); $person['files'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $person['files']) {
+        foreach ($person['files'] as &$f) { $f['url'] = Util::baseUrl('file.php?id='.(int)$f['id']); }
+        unset($f);
+    }
 }
 
-function enrich_policy_full(PDO $pdo, array &$policy): void {
+function enrich_policy_full(PDO $pdo, array &$policy, array $include = []): void {
     // Coverages
     $hasAcv = column_exists($pdo, 'policy_coverages', 'is_acv');
     $cols = 'pc.coverage_definition_id, cd.code, cd.name, pc.limit_amount, pc.deductible_amount'.($hasAcv? ', pc.is_acv':'');
     $st = $pdo->prepare("SELECT $cols FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id WHERE pc.policy_id=? ORDER BY cd.name");
     $st->execute([$policy['id']]); $policy['coverages'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $policy['coverages']) {
+        $settingsUrl = Util::baseUrl('index.php?page=settings&tab=coverages');
+        foreach ($policy['coverages'] as &$c) { $c['settings_url'] = $settingsUrl; }
+        unset($c);
+    }
     // Assets linked
     $paHasChildCov2 = column_exists($pdo, 'policy_assets', 'children_coverage_definition_id');
     $childSel2 = $paHasChildCov2 ? ', pa.children_coverage_definition_id' : '';
@@ -343,15 +467,27 @@ function enrich_policy_full(PDO $pdo, array &$policy): void {
                          LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id
                          WHERE pa.policy_id=? AND a.is_deleted=0 ORDER BY a.name");
     $st->execute([$policy['id']]); $policy['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $policy['assets']) {
+        foreach ($policy['assets'] as &$a) { $a['api_url'] = api_entity_url('assets', (int)$a['asset_id']); $a['html_url'] = html_entity_url('assets', (int)$a['asset_id']); }
+        unset($a);
+    }
     // People linked
     $st = $pdo->prepare("SELECT pp.person_id, p.first_name, p.last_name, pp.role, pp.coverage_definition_id, cd.name AS coverage_name
                          FROM policy_people pp JOIN people p ON p.id=pp.person_id
                          LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id
                          WHERE pp.policy_id=? ORDER BY p.last_name, p.first_name");
     $st->execute([$policy['id']]); $policy['people'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $policy['people']) {
+        foreach ($policy['people'] as &$p) { $p['api_url'] = api_entity_url('people', (int)$p['person_id']); $p['html_url'] = html_entity_url('people', (int)$p['person_id']); }
+        unset($p);
+    }
     // Files
     $st = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='policy' AND entity_id=? ORDER BY uploaded_at DESC");
     $st->execute([$policy['id']]); $policy['files'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($include['links']) && $policy['files']) {
+        foreach ($policy['files'] as &$f) { $f['url'] = Util::baseUrl('file.php?id='.(int)$f['id']); }
+        unset($f);
+    }
     // Group versions
     if (!empty($policy['policy_group_id'])) {
         $st = $pdo->prepare('SELECT id, version_number, start_date, end_date, status FROM policies WHERE policy_group_id=? ORDER BY version_number DESC');
@@ -410,7 +546,8 @@ try {
     if ($method === 'GET') {
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if ($id > 0) {
-            $res = get_entity($pdo, $entity, $id);
+            $include = parse_includes();
+            $res = get_entity($pdo, $entity, $id, $include);
             $code = $res['code'] ?? 200; unset($res['code']);
             api_out($res, $code);
         } else {
