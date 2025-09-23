@@ -102,7 +102,54 @@ foreach ($topLevel as $t) {
 }
 // Limit cards to first 8 for layout
 $perAssetCards = array_slice($perAssetCards, 0, 8);
-$expiring = $pdo->query("SELECT p.*, pg.display_name FROM policies p JOIN policy_groups pg ON pg.id=p.policy_group_id WHERE p.end_date >= CURDATE() AND p.end_date <= DATE_ADD(CURDATE(), INTERVAL 60 DAY) ORDER BY p.end_date ASC LIMIT 10")->fetchAll();
+
+// Upcoming expirations: include both policies and people document expirations
+$expiringPolicies = $pdo->query("SELECT p.*, pg.display_name FROM policies p JOIN policy_groups pg ON pg.id=p.policy_group_id WHERE p.end_date >= CURDATE() AND p.end_date <= DATE_ADD(CURDATE(), INTERVAL 60 DAY) ORDER BY p.end_date ASC")->fetchAll();
+
+// Pull person document expirations (date fields whose key includes 'expiration')
+$expiringDocs = [];
+try {
+  $sql = "SELECT v.person_id, DATE(v.value_text) AS exp_date, p.first_name, p.last_name, t.name AS doc_name
+          FROM person_doc_values v
+          JOIN person_doc_fields f ON f.id = v.field_id
+          JOIN person_doc_types t ON t.id = v.doc_type_id
+          JOIN people p ON p.id = v.person_id
+          WHERE f.input_type='date'
+            AND (f.name_key LIKE '%expiration%' OR f.display_name LIKE '%Expiration%')
+            AND v.value_text IS NOT NULL AND v.value_text<>''
+            AND DATE(v.value_text) >= CURDATE()
+            AND DATE(v.value_text) <= DATE_ADD(CURDATE(), INTERVAL 60 DAY)
+          ORDER BY exp_date ASC";
+  $expiringDocs = $pdo->query($sql)->fetchAll();
+} catch (Throwable $e) { $expiringDocs = []; }
+
+// Merge and sort by date, then limit for display
+$expiringAll = [];
+foreach ($expiringPolicies as $p) {
+  $expiringAll[] = [
+    'kind' => 'policy',
+    'label' => $p['policy_number'],
+    'detail' => $p['insurer'],
+    'date' => $p['end_date'],
+    'status' => $p['status'] ?? '',
+    'pill' => ($p['status'] ?? '')==='active' ? 'primary' : 'warn',
+    'url' => Util::baseUrl('index.php?page=policy_edit&id='.(int)$p['id']),
+  ];
+}
+foreach ($expiringDocs as $d) {
+  $name = trim(($d['first_name'] ?? '').' '.($d['last_name'] ?? ''));
+  $expiringAll[] = [
+    'kind' => 'doc',
+    'label' => ($name !== '' ? $name : 'Person #'.(int)$d['person_id']),
+    'detail' => $d['doc_name'] ?? 'Document',
+    'date' => $d['exp_date'],
+    'status' => 'ID',
+    'pill' => '',
+    'url' => Util::baseUrl('index.php?page=person_edit&id='.(int)$d['person_id']),
+  ];
+}
+usort($expiringAll, function($a,$b){ return strcmp($a['date'],$b['date']); });
+$expiringAll = array_slice($expiringAll, 0, 10);
 
 // Incomplete assets detection
 $assetRows = $pdo->query("SELECT a.id, a.name, a.make, a.model, a.year, a.updated_at, ac.name AS category FROM assets a LEFT JOIN asset_categories ac ON ac.id=a.category_id WHERE a.is_deleted=0 ORDER BY a.name")->fetchAll();
@@ -136,20 +183,20 @@ $incompleteAssets = array_slice($incompleteAssets, 0, 10);
   <div class="col-6">
     <div class="card">
       <h1>Upcoming Expirations</h1>
-      <?php if (!$expiring): ?>
-        <div class="small muted">No policies expiring in next 60 days.</div>
+      <?php if (!$expiringAll): ?>
+        <div class="small muted">No upcoming expirations in next 60 days.</div>
       <?php else: ?>
         <table>
           <thead>
-            <tr><th>Policy</th><th>Insurer</th><th>End</th><th>Status</th></tr>
+            <tr><th>Item</th><th>Details</th><th>End</th><th>Status</th></tr>
           </thead>
           <tbody>
-            <?php foreach ($expiring as $p): ?>
+            <?php foreach ($expiringAll as $it): ?>
               <tr>
-                <td><a href="<?= Util::baseUrl('index.php?page=policy_edit&id='.(int)$p['id']) ?>"><?= Util::h($p['policy_number']) ?></a></td>
-                <td><?= Util::h($p['insurer']) ?></td>
-                <td><?= Util::h($p['end_date']) ?></td>
-                <td><span class="pill <?= $p['status']==='active'?'primary':'warn' ?>"><?= Util::h($p['status']) ?></span></td>
+                <td><a href="<?= Util::h($it['url']) ?>"><?= Util::h($it['label']) ?></a></td>
+                <td><?= Util::h($it['detail']) ?></td>
+                <td><?= Util::h($it['date']) ?></td>
+                <td><span class="pill <?= Util::h($it['pill']) ?>"><?= Util::h($it['status']) ?></span></td>
               </tr>
             <?php endforeach; ?>
           </tbody>
