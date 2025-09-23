@@ -37,11 +37,19 @@ API
     - Keys are validated via the login server using `validate_api_key_c` from `public/auth.php`.
   - GET lists: `GET /api.php?entity=assets|people|policies[&limit=100&offset=0&q=...]`
   - GET detail: `GET /api.php?entity=assets|people|policies&id=123`
+    - Detail responses include linked info (see below).
   - POST bulk updates: `POST /api.php` with JSON body `{ "entity": "assets|people|policies", "updates": [ { "id": 1, "fields": { ... } } ] }`
   - Updatable columns:
     - assets: parent_id, name, category_id, description, location, make, model, serial_number, year, odometer_miles, hours_used, purchase_date, notes, location_id, asset_location_id, public_token
     - people: first_name, last_name, dob, notes, gender
     - policies: policy_group_id, version_number, policy_number, insurer, policy_type, start_date, end_date, premium, status, notes
+
+  - Linked info in detail responses:
+    - assets: `values`, `addresses`, `properties` (if present), `files` (metadata), `locations`, `children`, `owners` (people via person_assets), `policies` (direct with coverage), `policies_inherited` (from ancestors).
+    - policies: `coverages` (with definition info), `assets` (with mapping and apply-to-children), `people` (role + optional coverage), `files` (metadata), `group_versions`.
+    - people: `assets` (role), `policies` (role + optional coverage), `files` (metadata).
+
+  - Include links in list responses: add `&include=owners,policies,values` (assets), `&include=coverages,assets,people` (policies), `&include=assets,policies` (people).
 
 Uploads Storage
 - All uploaded images/documents are stored in MySQL (`files` table as LONGBLOB) — not on the filesystem.

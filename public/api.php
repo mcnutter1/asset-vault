@@ -39,6 +39,15 @@ function parse_json_body(): array {
     return is_array($data) ? $data : [];
 }
 
+function parse_includes(): array {
+    $inc = strtolower(trim((string)($_GET['include'] ?? $_GET['expand'] ?? '')));
+    if ($inc === '') return [];
+    $parts = array_values(array_filter(array_map('trim', explode(',', $inc))));
+    $set = [];
+    foreach ($parts as $p) { $set[$p] = true; }
+    return $set;
+}
+
 // Sanitize whitelist of columns for each entity
 function allowed_columns_for(string $entity): array {
     switch ($entity) {
@@ -66,7 +75,7 @@ function table_for(string $entity): ?string {
 }
 
 // List endpoints
-function list_entities(PDO $pdo, string $entity): array {
+function list_entities(PDO $pdo, string $entity, array $include = []): array {
     switch ($entity) {
         case 'assets': {
             $limit = max(1, min(500, (int)($_GET['limit'] ?? 100)));
@@ -84,6 +93,10 @@ function list_entities(PDO $pdo, string $entity): array {
             $sql .= ' ORDER BY a.id DESC LIMIT '.$limit.' OFFSET '.$offset;
             $st = $pdo->prepare($sql); $st->execute($params);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+            if ($include) {
+                foreach ($rows as &$r) { enrich_asset_min($pdo, $r, $include); }
+                unset($r);
+            }
             return ['ok'=>true,'data'=>$rows,'count'=>count($rows)];
         }
         case 'people': {
@@ -101,6 +114,10 @@ function list_entities(PDO $pdo, string $entity): array {
             $sql .= ' ORDER BY id DESC LIMIT '.$limit.' OFFSET '.$offset;
             $st = $pdo->prepare($sql); $st->execute($params);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+            if ($include) {
+                foreach ($rows as &$r) { enrich_person_min($pdo, $r, $include); }
+                unset($r);
+            }
             return ['ok'=>true,'data'=>$rows,'count'=>count($rows)];
         }
         case 'policies': {
@@ -120,6 +137,10 @@ function list_entities(PDO $pdo, string $entity): array {
             $sql .= ' ORDER BY id DESC LIMIT '.$limit.' OFFSET '.$offset;
             $st = $pdo->prepare($sql); $st->execute($params);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+            if ($include) {
+                foreach ($rows as &$r) { enrich_policy_min($pdo, $r, $include); }
+                unset($r);
+            }
             return ['ok'=>true,'data'=>$rows,'count'=>count($rows)];
         }
         default:
@@ -134,22 +155,209 @@ function get_entity(PDO $pdo, string $entity, int $id): array {
             $st = $pdo->prepare('SELECT a.*, ac.name AS category_name FROM assets a LEFT JOIN asset_categories ac ON ac.id=a.category_id WHERE a.id=? AND a.is_deleted=0');
             $st->execute([$id]); $row = $st->fetch(PDO::FETCH_ASSOC);
             if (!$row) return ['ok'=>false,'error'=>'Not found', 'code'=>404];
+            enrich_asset_full($pdo, $row);
             return ['ok'=>true,'data'=>$row];
         }
         case 'people': {
             $st = $pdo->prepare('SELECT * FROM people WHERE id=?');
             $st->execute([$id]); $row = $st->fetch(PDO::FETCH_ASSOC);
             if (!$row) return ['ok'=>false,'error'=>'Not found', 'code'=>404];
+            enrich_person_full($pdo, $row);
             return ['ok'=>true,'data'=>$row];
         }
         case 'policies': {
             $st = $pdo->prepare('SELECT * FROM policies WHERE id=?');
             $st->execute([$id]); $row = $st->fetch(PDO::FETCH_ASSOC);
             if (!$row) return ['ok'=>false,'error'=>'Not found', 'code'=>404];
+            enrich_policy_full($pdo, $row);
             return ['ok'=>true,'data'=>$row];
         }
         default:
             return ['ok'=>false,'error'=>'Unknown entity'];
+    }
+}
+
+// Minimal enrichers for list views when include flags passed
+function enrich_asset_min(PDO $pdo, array &$asset, array $include): void {
+    if (!empty($include['owners'])) {
+        if (table_exists($pdo, 'person_assets')) {
+            $st = $pdo->prepare("SELECT p.id, p.first_name, p.last_name, pa.role FROM person_assets pa JOIN people p ON p.id=pa.person_id WHERE pa.asset_id=? ORDER BY p.last_name, p.first_name");
+            $st->execute([$asset['id']]); $asset['owners'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        } else { $asset['owners'] = []; }
+    }
+    if (!empty($include['policies'])) {
+        $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, pa.applies_to_children, pa.coverage_definition_id, cd.name AS coverage_name FROM policy_assets pa JOIN policies p ON p.id=pa.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id WHERE pa.asset_id=? ORDER BY p.policy_number");
+        $st->execute([$asset['id']]); $asset['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+    if (!empty($include['values'])) {
+        $st = $pdo->prepare("SELECT value_type, amount, valuation_date, source FROM asset_values WHERE asset_id=? ORDER BY valuation_date");
+        $st->execute([$asset['id']]); $asset['values'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
+function enrich_person_min(PDO $pdo, array &$person, array $include): void {
+    if (!empty($include['assets'])) {
+        if (table_exists($pdo, 'person_assets')) {
+            $st = $pdo->prepare("SELECT a.id, a.name, pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? AND a.is_deleted=0 ORDER BY a.name");
+            $st->execute([$person['id']]); $person['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+        } else { $person['assets'] = []; }
+    }
+    if (!empty($include['policies'])) {
+        $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, pp.role, pp.coverage_definition_id, cd.name AS coverage_name FROM policy_people pp JOIN policies p ON p.id=pp.policy_id LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id WHERE pp.person_id=? ORDER BY p.policy_number");
+        $st->execute([$person['id']]); $person['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
+function enrich_policy_min(PDO $pdo, array &$policy, array $include): void {
+    if (!empty($include['coverages'])) {
+        $hasAcv = column_exists($pdo, 'policy_coverages', 'is_acv');
+        $cols = 'pc.coverage_definition_id, cd.code, cd.name, pc.limit_amount, pc.deductible_amount'.($hasAcv? ', pc.is_acv':'');
+        $st = $pdo->prepare("SELECT $cols FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id WHERE pc.policy_id=? ORDER BY cd.name");
+        $st->execute([$policy['id']]); $policy['coverages'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+    if (!empty($include['assets'])) {
+        $st = $pdo->prepare("SELECT pa.asset_id, a.name, pa.applies_to_children, pa.coverage_definition_id, cd.name AS coverage_name FROM policy_assets pa JOIN assets a ON a.id=pa.asset_id LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id WHERE pa.policy_id=? AND a.is_deleted=0 ORDER BY a.name");
+        $st->execute([$policy['id']]); $policy['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+    if (!empty($include['people'])) {
+        $st = $pdo->prepare("SELECT pp.person_id, p.first_name, p.last_name, pp.role, pp.coverage_definition_id, cd.name AS coverage_name FROM policy_people pp JOIN people p ON p.id=pp.person_id LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id WHERE pp.policy_id=? ORDER BY p.last_name, p.first_name");
+        $st->execute([$policy['id']]); $policy['people'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
+// Full enrichers for detail endpoints
+function enrich_asset_full(PDO $pdo, array &$asset): void {
+    // Values timeline
+    $st = $pdo->prepare("SELECT value_type, amount, valuation_date, source FROM asset_values WHERE asset_id=? ORDER BY valuation_date");
+    $st->execute([$asset['id']]); $asset['values'] = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    // Addresses
+    $st = $pdo->prepare("SELECT id, address_type, line1, line2, city, state, postal_code, country, latitude, longitude, updated_at FROM asset_addresses WHERE asset_id=? ORDER BY updated_at DESC");
+    $st->execute([$asset['id']]); $asset['addresses'] = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    // Property values with definitions (if dynamic tables present)
+    $cid = $asset['category_id'] ?? null; $cid = $cid ? (int)$cid : null;
+    if (table_exists($pdo, 'asset_property_defs')) {
+        $hasCore = column_exists($pdo, 'asset_property_defs', 'is_core');
+        $coreSel = $hasCore ? 'd.is_core' : '0 AS is_core';
+        $sql = 'SELECT d.id AS property_def_id, d.name_key, d.display_name, d.input_type, d.show_on_view, '.$coreSel.', v.value_text
+                FROM asset_property_defs d
+                LEFT JOIN asset_property_values v ON v.property_def_id=d.id AND v.asset_id=?
+                WHERE d.is_active=1';
+        $params = [$asset['id']];
+        if ($cid) { $sql .= ' AND (d.category_id IS NULL OR d.category_id=?)'; $params[] = $cid; }
+        $sql .= ' ORDER BY d.sort_order, d.display_name';
+        $st = $pdo->prepare($sql); $st->execute($params); $asset['properties'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $asset['properties'] = [];
+    }
+
+    // Files metadata (no content)
+    $st = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='asset' AND entity_id=? ORDER BY uploaded_at DESC");
+    $st->execute([$asset['id']]); $asset['files'] = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    // Locations
+    $st = $pdo->prepare("SELECT id, parent_id, name, description FROM asset_locations WHERE asset_id=? ORDER BY name");
+    $st->execute([$asset['id']]); $asset['locations'] = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    // Children assets (minimal)
+    $st = $pdo->prepare("SELECT id, name FROM assets WHERE parent_id=? AND is_deleted=0 ORDER BY name");
+    $st->execute([$asset['id']]); $asset['children'] = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    // Direct policies with coverage mapping (tolerate optional columns)
+    $pcHasAcv = column_exists($pdo, 'policy_coverages', 'is_acv');
+    $paHasChildCov = column_exists($pdo, 'policy_assets', 'children_coverage_definition_id');
+    $pcCols = 'pc.limit_amount, pc.deductible_amount'.($pcHasAcv? ', pc.is_acv' : '');
+    $childSel = $paHasChildCov ? 'pa.children_coverage_definition_id,' : '';
+    $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type,
+                                pa.applies_to_children, pa.coverage_definition_id, $childSel
+                                cd.name AS coverage_name, $pcCols
+                         FROM policy_assets pa
+                         JOIN policies p ON p.id=pa.policy_id
+                         LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id
+                         LEFT JOIN policy_coverages pc ON pc.policy_id=p.id AND pc.coverage_definition_id=pa.coverage_definition_id
+                         WHERE pa.asset_id=? ORDER BY p.policy_number ASC");
+    $st->execute([$asset['id']]); $asset['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    // Inherited policies from ancestors
+    $ancestors = [];
+    $cur = $asset['parent_id'] ?? null;
+    while ($cur) {
+        $st2 = $pdo->prepare('SELECT id, parent_id FROM assets WHERE id=?'); $st2->execute([$cur]); $row = $st2->fetch(PDO::FETCH_ASSOC);
+        if (!$row) break; $ancestors[] = (int)$row['id']; $cur = $row['parent_id'];
+    }
+    if ($ancestors) {
+        $in = implode(',', array_fill(0, count($ancestors), '?'));
+        $covExpr = $paHasChildCov ? 'COALESCE(pa.children_coverage_definition_id, pa.coverage_definition_id)' : 'pa.coverage_definition_id';
+        $sql = "SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type,
+                       pa.applies_to_children,
+                       $covExpr AS coverage_definition_id,
+                       cd.name AS coverage_name,
+                       $pcCols
+                FROM policy_assets pa
+                JOIN policies p ON p.id=pa.policy_id
+                LEFT JOIN coverage_definitions cd ON cd.id=$covExpr
+                LEFT JOIN policy_coverages pc ON pc.policy_id=p.id AND pc.coverage_definition_id=$covExpr
+                WHERE pa.asset_id IN ($in) AND pa.applies_to_children=1
+                ORDER BY p.end_date DESC";
+        $st = $pdo->prepare($sql); $st->execute($ancestors); $asset['policies_inherited'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $asset['policies_inherited'] = [];
+    }
+
+    // Owners / users linked to asset
+    if (table_exists($pdo, 'person_assets')) {
+        $st = $pdo->prepare("SELECT p.id, p.first_name, p.last_name, pa.role FROM person_assets pa JOIN people p ON p.id=pa.person_id WHERE pa.asset_id=? ORDER BY p.last_name, p.first_name");
+        $st->execute([$asset['id']]); $asset['owners'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    } else { $asset['owners'] = []; }
+}
+
+function enrich_person_full(PDO $pdo, array &$person): void {
+    // Assets linked
+    if (table_exists($pdo, 'person_assets')) {
+        $st = $pdo->prepare("SELECT a.id, a.name, pa.role FROM person_assets pa JOIN assets a ON a.id=pa.asset_id WHERE pa.person_id=? AND a.is_deleted=0 ORDER BY a.name");
+        $st->execute([$person['id']]); $person['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    } else { $person['assets'] = []; }
+    // Policies linked
+    $st = $pdo->prepare("SELECT p.id, p.policy_number, p.insurer, p.status, p.policy_type, pp.role, pp.coverage_definition_id, cd.name AS coverage_name
+                         FROM policy_people pp JOIN policies p ON p.id=pp.policy_id
+                         LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id
+                         WHERE pp.person_id=? ORDER BY p.policy_number");
+    $st->execute([$person['id']]); $person['policies'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    // Files
+    $st = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='person' AND entity_id=? ORDER BY uploaded_at DESC");
+    $st->execute([$person['id']]); $person['files'] = $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function enrich_policy_full(PDO $pdo, array &$policy): void {
+    // Coverages
+    $hasAcv = column_exists($pdo, 'policy_coverages', 'is_acv');
+    $cols = 'pc.coverage_definition_id, cd.code, cd.name, pc.limit_amount, pc.deductible_amount'.($hasAcv? ', pc.is_acv':'');
+    $st = $pdo->prepare("SELECT $cols FROM policy_coverages pc JOIN coverage_definitions cd ON cd.id=pc.coverage_definition_id WHERE pc.policy_id=? ORDER BY cd.name");
+    $st->execute([$policy['id']]); $policy['coverages'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    // Assets linked
+    $paHasChildCov2 = column_exists($pdo, 'policy_assets', 'children_coverage_definition_id');
+    $childSel2 = $paHasChildCov2 ? ', pa.children_coverage_definition_id' : '';
+    $st = $pdo->prepare("SELECT pa.asset_id, a.name, pa.applies_to_children, pa.coverage_definition_id$childSel2, cd.name AS coverage_name
+                         FROM policy_assets pa JOIN assets a ON a.id=pa.asset_id
+                         LEFT JOIN coverage_definitions cd ON cd.id=pa.coverage_definition_id
+                         WHERE pa.policy_id=? AND a.is_deleted=0 ORDER BY a.name");
+    $st->execute([$policy['id']]); $policy['assets'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    // People linked
+    $st = $pdo->prepare("SELECT pp.person_id, p.first_name, p.last_name, pp.role, pp.coverage_definition_id, cd.name AS coverage_name
+                         FROM policy_people pp JOIN people p ON p.id=pp.person_id
+                         LEFT JOIN coverage_definitions cd ON cd.id=pp.coverage_definition_id
+                         WHERE pp.policy_id=? ORDER BY p.last_name, p.first_name");
+    $st->execute([$policy['id']]); $policy['people'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    // Files
+    $st = $pdo->prepare("SELECT id, filename, mime_type, size, caption, uploaded_at FROM files WHERE entity_type='policy' AND entity_id=? ORDER BY uploaded_at DESC");
+    $st->execute([$policy['id']]); $policy['files'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    // Group versions
+    if (!empty($policy['policy_group_id'])) {
+        $st = $pdo->prepare('SELECT id, version_number, start_date, end_date, status FROM policies WHERE policy_group_id=? ORDER BY version_number DESC');
+        $st->execute([$policy['policy_group_id']]); $policy['group_versions'] = $st->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $policy['group_versions'] = [];
     }
 }
 
@@ -206,7 +414,8 @@ try {
             $code = $res['code'] ?? 200; unset($res['code']);
             api_out($res, $code);
         } else {
-            api_out(list_entities($pdo, $entity));
+            $include = parse_includes();
+            api_out(list_entities($pdo, $entity, $include));
         }
     }
 
